@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Мондавошка V25 Online</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+  <script src="/sdk.js"></script>
+  <script>
+    window.ysdk = null;
+    window.yandexSdkReady = false;
+
+    async function initYandexGamesSDK() {
+      try {
+        if (typeof YaGames === 'undefined') {
+          console.warn('Yandex Games SDK недоступен. При локальном запуске это нормально.');
+          return null;
+        }
+
+        window.ysdk = await YaGames.init();
+        window.yandexSdkReady = true;
+        console.log('Yandex Games SDK: Initialized');
+
+        // Сообщаем платформе, что интерфейс игры загружен и готов.
+        if (window.ysdk.features && window.ysdk.features.LoadingAPI) {
+          await window.ysdk.features.LoadingAPI.ready();
+        }
+
+        return window.ysdk;
+      } catch (err) {
+        console.error('Ошибка инициализации Yandex Games SDK:', err);
+        return null;
+      }
+    }
+
+    // SDK уже загружен предыдущим тегом script, поэтому инициализируем после разбора DOM.
+    document.addEventListener('DOMContentLoaded', initYandexGamesSDK);
+  </script>
+</head>
+<body>
+<div class="app">
+<header>
+      <div><h1>МОНДАВОШКА</h1><p>Векторное поле • точные клетки • подсказка маршрута</p></div>
+      <div class="headerActions">
+        <button id="musicToggle" type="button">♫ Музыка: вкл</button>
+        <button id="newGame" type="button">Новая игра</button>
+      </div>
+    </header>
+<main>
+<section class="boardbox"><svg id="board" viewBox="0 0 1000 1000"></svg></section>
+<aside>
+<div class="card"><small>Ход игрока</small><div id="player" class="player">—</div><div id="status">Начните игру</div></div>
+<div class="card dice">
+<button class="die" id="d0" disabled><span></span></button><button class="die" id="d1" disabled><span></span></button>
+<button id="roll" disabled>Бросить кости</button><button id="sum" disabled>Ход суммой не используется</button>
+</div>
+<div class="card direction"><b>Направление игры</b><div class="clockwise">↻ По часовой стрелке</div><div id="turnOrder" class="turnOrder">Красный → Чёрный → Синий → Бело-синий</div></div><div class="card"><b>Как ходить</b><p>После броска выберите кость. Зелёным подсветятся фишки, которыми можно сходить. Нажмите фишку — голубым увидите весь путь, жёлтым конечную клетку. Нажмите фишку ещё раз для хода.</p></div>
+<div class="card penaltyCard">
+      <b>Желание проигравшему</b>
+      <div id="penaltyText" class="penaltyText">Определится колесом фортуны перед игрой</div>
+    </div>
+    <div class="card legend"><div><i class="g"></i> можно ходить</div><div><i class="b"></i> маршрут</div><div><i class="y"></i> конечная клетка</div></div>
+</aside>
+</main></div>
+<div class="modal show" id="mainMenu">
+      <div class="dialog mainMenuDialog">
+        <div class="menuLogo">МОНДАВОШКА</div>
+        <div class="menuSubtitle">Выберите режим игры</div>
+        <div class="mainMenuButtons">
+          <button id="playLocal" type="button"><span class="menuNum">1</span><span>Играть на одном устройстве</span></button>
+          <button id="createOnline" type="button"><span class="menuNum">2</span><span>Создать онлайн-комнату</span></button>
+          <button id="joinOnline" type="button"><span class="menuNum">3</span><span>Войти по коду</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="localModal">
+      <div class="dialog">
+        <h2>Игра на одном устройстве</h2>
+        <label>Количество игроков
+          <select id="count"><option>2</option><option>3</option><option selected>4</option></select>
+        </label>
+        <p>Красный • чёрный • синий • бело-синий</p>
+        <div class="dialogActions">
+          <button class="backToMenu" type="button">← Назад</button>
+          <button id="start" type="button">Далее — колесо фортуны</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="onlineCreateModal">
+      <div class="dialog onlineDialog">
+        <h2>Создать онлайн-комнату</h2>
+        <label>Ваше имя
+          <input id="createPlayerName" type="text" maxlength="24" placeholder="Например: Гриша">
+        </label>
+        <p class="onlineHint">После создания появится 6-значный код. Передайте его остальным игрокам.</p>
+        <div id="createOnlineError" class="onlineError"></div>
+        <div class="dialogActions">
+          <button class="backToMenu" type="button">← Назад</button>
+          <button id="createRoomBtn" type="button">Создать комнату</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="onlineJoinModal">
+      <div class="dialog onlineDialog">
+        <h2>Войти по коду</h2>
+        <label>Ваше имя
+          <input id="joinPlayerName" type="text" maxlength="24" placeholder="Например: Альберт">
+        </label>
+        <label>Код комнаты
+          <input id="roomCode" type="text" inputmode="numeric" maxlength="6" placeholder="Например: 483921">
+        </label>
+        <div id="joinOnlineError" class="onlineError"></div>
+        <div class="dialogActions">
+          <button class="backToMenu" type="button">← Назад</button>
+          <button id="joinRoomBtn" type="button">Войти</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="onlineLobbyModal">
+      <div class="dialog onlineDialog lobbyDialog">
+        <h2>Онлайн-комната</h2>
+        <div class="roomCodeBox">
+          <small>Код комнаты</small>
+          <strong id="lobbyCode">------</strong>
+          <button id="copyRoomCode" type="button">Копировать код</button>
+        </div>
+        <div id="onlineConnection" class="connectionState">Подключение…</div>
+        <div class="lobbyTitle">Игроки</div>
+        <div id="lobbyPlayers" class="lobbyPlayers"></div>
+        <div id="lobbyHint" class="onlineHint">Ожидание игроков…</div>
+        <div class="dialogActions">
+          <button id="leaveOnlineRoom" type="button">← Выйти</button>
+          <button id="startOnlineGame" type="button" disabled>Колесо фортуны и начать</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="wheelModal">
+      <div class="dialog wheelDialog">
+        <h2>Колесо желаний</h2>
+        <p class="wheelIntro">Колесо заранее определит, что выполняет проигравший игрок.</p>
+
+        <div class="wheelStage">
+          <div class="wheelPointer"></div>
+          <svg id="fortuneWheel" viewBox="0 0 420 420" aria-label="Колесо фортуны">
+            <g id="wheelRotor"></g>
+            <circle cx="210" cy="210" r="38" class="wheelHub"></circle>
+            <text x="210" y="218" text-anchor="middle" class="wheelHubText">УДАЧА</text>
+          </svg>
+        </div>
+
+        <div id="wheelResult" class="wheelResult">Нажмите «Крутить колесо»</div>
+        <div id="wishList" class="wishList"></div>
+
+        <div class="wheelButtons">
+          <button id="spinWheel" type="button">Крутить колесо</button>
+          <button id="beginGame" type="button" disabled>Начать игру</button>
+        </div>
+      </div>
+    </div>
+<script src="game.js"></script>
+<script src="online-config.js"></script>
+<script src="online.js"></script>
+</body></html>

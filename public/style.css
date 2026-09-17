@@ -1,0 +1,347 @@
+
+*{box-sizing:border-box}:root{--wood:#d3a66b;--paper:#efd6a7;--ink:#3a2416}
+body{margin:0;background:radial-gradient(circle at top,#61462f,#21160f 65%);font-family:Arial,sans-serif;color:var(--ink)}
+.app{max-width:1550px;margin:auto;padding:14px}header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:12px;border:4px solid #4b2d1a;border-radius:13px;background:linear-gradient(#d9aa69,#aa6f3b)}h1{font:700 clamp(30px,4vw,58px) Georgia,serif;margin:0;letter-spacing:2px}header p{margin:2px 0;font-weight:700}
+button,select{font:inherit}button{border:2px solid #442a19;border-radius:10px;background:#f1d19d;padding:10px 14px;font-weight:800;cursor:pointer}button:disabled{opacity:.42;cursor:not-allowed}
+main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:15px}.boardbox{aspect-ratio:1;border:8px solid #4b2d1a;border-radius:12px;overflow:hidden;background:#d5aa70;box-shadow:0 18px 45px #000a}svg{display:block;width:100%;height:100%}aside{display:flex;flex-direction:column;gap:10px;position:sticky;top:10px;align-self:start}.card{background:#f1dfbd;border:3px solid #5a3922;border-radius:11px;padding:12px;line-height:1.4}.card p{font-size:14px}.player{font-size:26px;font-weight:900}.dice{display:grid;grid-template-columns:1fr 1fr;gap:8px}.dice>button:not(.die){grid-column:1/-1}.die{height:92px;background:#d9bb90;display:flex;align-items:center;justify-content:center}.die span{position:relative;width:64px;height:64px;border:2px solid #241914;border-radius:14px;background:#fffaf0;box-shadow:0 7px 10px #0005,inset 4px 4px 9px #fff,inset -5px -5px 9px #cbc2b5}.die span:before{content:"";position:absolute;inset:0;background-repeat:no-repeat}.die.active{outline:4px solid #ffd338}.die.rolling span{animation:throw .7s cubic-bezier(.2,.8,.25,1)}@keyframes throw{0%{transform:rotate(0)}30%{transform:translateY(-23px) rotate(145deg) scale(1.08)}65%{transform:translateY(4px) rotate(280deg)}82%{transform:translateY(-6px) rotate(330deg)}100%{transform:rotate(360deg)}}
+.die span[data-v="1"]:before{background:radial-gradient(circle,#211915 0 6px,transparent 7px) 50% 50%/100% 100% no-repeat}
+.die span[data-v="2"]:before{background:radial-gradient(circle,#211915 0 6px,transparent 7px) 24% 24%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 76% 76%/20px 20px no-repeat}
+.die span[data-v="3"]:before{background:radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 22%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 50% 50%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 78%/20px 20px no-repeat}
+.die span[data-v="4"]:before{background:radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 22%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 22%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 78%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 78%/20px 20px no-repeat}
+.die span[data-v="5"]:before{background:radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 22%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 22%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 50% 50%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 78%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 78%/20px 20px no-repeat}
+.die span[data-v="6"]:before{background:radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 20%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 20%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 50%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 50%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 22% 80%/20px 20px no-repeat,radial-gradient(circle,#211915 0 6px,transparent 7px) 78% 80%/20px 20px no-repeat}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:7px}.g{background:#4fe36b}.b{background:#55b7ff}.y{background:#ffd43b}
+.cell{fill:#efd5a6;stroke:#654326;stroke-width:2}.cell.start{fill:#f3dfb8;stroke-width:4}.cell.path{fill:#9dd8ff}.cell.dest{fill:#ffe16a;stroke:#8a6511;stroke-width:5}.cell.trap{fill:#e5c188}.homeHole{fill:#b77d43;stroke:#53321e;stroke-width:5}.homeInner{fill:#7d4e2d;opacity:.32}.piece{cursor:pointer;filter:drop-shadow(0 4px 3px #0008)}.piece.can{filter:drop-shadow(0 0 10px #4bf06a) drop-shadow(0 4px 3px #0008)}.piece.sel{filter:drop-shadow(0 0 11px #ffd43b) drop-shadow(0 4px 3px #0008)}.route{fill:none;stroke:#258fda;stroke-width:9;stroke-linecap:round;stroke-dasharray:3 15;opacity:.85}.txt{font:700 21px Georgia,serif;fill:#51321d}.smalltxt{font:700 16px Arial;fill:#51321d}.modal{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;z-index:20}.modal.show{display:flex}.dialog{width:min(420px,92vw);padding:22px;background:#f1dcb5;border:5px solid #56341e;border-radius:15px}.dialog label{display:grid;gap:6px}.dialog select{padding:10px}
+@media(max-width:1000px){main{grid-template-columns:1fr}aside{position:static;display:grid;grid-template-columns:1fr 1fr}}@media(max-width:620px){.app{padding:5px}aside{grid-template-columns:1fr}header p{display:none}.boardbox{border-width:4px}}
+
+
+/* ===== V6: объёмное 3D-оформление поля ===== */
+.boardbox{
+  position:relative;
+  border:0;
+  padding:14px 14px 22px;
+  border-radius:18px;
+  background:linear-gradient(145deg,#b8793f 0%,#71421f 52%,#4b2a16 100%);
+  box-shadow:
+    0 5px 0 #2f190e,
+    0 13px 0 #1c0f09,
+    0 25px 45px #000b,
+    inset 0 3px 2px #f2c17a88,
+    inset 0 -5px 8px #32190dbb;
+}
+.boardbox:before{
+  content:"";position:absolute;inset:8px 8px 16px;border-radius:13px;
+  border:2px solid #e0a65f66;pointer-events:none;
+}
+#board{border-radius:10px;filter:drop-shadow(0 6px 5px #0006)}
+
+.cell{
+  filter:drop-shadow(0 2px 1px #5a341833);
+}
+.cell.start{filter:drop-shadow(0 3px 2px #3a210d55)}
+.homeHole{filter:drop-shadow(0 3px 2px #0006)}
+.piece{filter:drop-shadow(0 7px 4px #0009)}
+.piece.can{
+  filter:drop-shadow(0 0 5px #24ff54) drop-shadow(0 0 12px #24ff54) drop-shadow(0 7px 4px #0009);
+  animation:legalPulse 1s ease-in-out infinite;
+}
+@keyframes legalPulse{0%,100%{opacity:1}50%{opacity:.82}}
+.cell.path{filter:drop-shadow(0 0 4px #49b7ff)}
+.cell.dest{filter:drop-shadow(0 0 7px #ffd43b)}
+.card{box-shadow:0 5px 0 #4c2d19,0 8px 14px #0004,inset 0 1px 0 #fff7}
+
+/* ===== V7 — более выраженное 3D и игровой вид ===== */
+.boardbox{
+  perspective:1400px;
+  padding:18px 18px 30px;
+  background:
+    linear-gradient(145deg,#c48a4c 0%,#8f542b 38%,#5f331b 72%,#3d2012 100%);
+  box-shadow:
+    0 7px 0 #32190d,
+    0 15px 0 #211007,
+    0 29px 55px #000c,
+    inset 0 4px 2px #ffd39177,
+    inset 0 -9px 13px #2a130bbb;
+}
+.boardbox:after{
+  content:"";
+  position:absolute;
+  left:30px;right:30px;bottom:5px;height:19px;
+  border-radius:0 0 16px 16px;
+  background:linear-gradient(#6a371b,#35190d);
+  box-shadow:0 8px 12px #0009;
+  pointer-events:none;
+}
+#board{
+  transform:rotateX(2.2deg) scale(.988);
+  transform-origin:50% 48%;
+  background:#d8ae75;
+  box-shadow:0 10px 17px #0007;
+}
+.direction .clockwise{
+  font:900 20px Georgia,serif;
+  margin:8px 0 4px;
+}
+.turnOrder{
+  font-size:13px;
+  line-height:1.4;
+  padding:7px 9px;
+  border-radius:8px;
+  background:#dcc098;
+  border:1px solid #8a603a;
+}
+.piece{
+  transition:filter .15s ease;
+}
+@media(max-width:620px){
+  #board{transform:none}
+  .boardbox{padding:8px 8px 14px}
+}
+
+/* V8 */
+.cell.trap{fill:#e8c797}
+
+/* V12 */
+.piece.captive{opacity:.96}
+
+/* V15 */
+.cell.jumpdest{
+  fill:#ffd36b !important;
+  stroke:#7f5218 !important;
+  stroke-width:5 !important;
+  filter:drop-shadow(0 0 6px #ffc63b);
+}
+
+/* V16 */
+#sum:disabled{opacity:.35}
+
+
+/* ===== V18 — колесо фортуны и музыка ===== */
+.headerActions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+#musicToggle{
+  min-width:135px;
+}
+.penaltyCard{
+  background:linear-gradient(180deg,#f4e3c0,#e7c995);
+}
+.penaltyText{
+  margin-top:8px;
+  padding:9px 10px;
+  border-radius:8px;
+  background:#cfa66e55;
+  border:1px solid #9d7245;
+  font-weight:800;
+  line-height:1.35;
+}
+
+.wheelDialog{
+  width:min(720px,94vw);
+  text-align:center;
+}
+.wheelIntro{
+  margin-top:-4px;
+  color:#65472d;
+}
+.wheelStage{
+  position:relative;
+  width:min(430px,82vw);
+  aspect-ratio:1;
+  margin:12px auto 8px;
+  filter:drop-shadow(0 12px 14px #0006);
+}
+#fortuneWheel{
+  width:100%;
+  height:100%;
+  display:block;
+  overflow:visible;
+}
+#wheelRotor{
+  transform-origin:210px 210px;
+  transition:transform 4.6s cubic-bezier(.12,.66,.12,1);
+}
+.wheelPointer{
+  position:absolute;
+  z-index:5;
+  top:-7px;
+  left:50%;
+  transform:translateX(-50%);
+  width:0;height:0;
+  border-left:22px solid transparent;
+  border-right:22px solid transparent;
+  border-top:0;
+  border-bottom:48px solid #6b3418;
+  filter:drop-shadow(0 3px 2px #0006);
+}
+.wheelHub{
+  fill:#f5d58d;
+  stroke:#7e4b22;
+  stroke-width:7;
+  filter:drop-shadow(0 3px 3px #0005);
+}
+.wheelHubText{
+  font:900 13px Georgia,serif;
+  fill:#6c421e;
+}
+.wheelResult{
+  min-height:48px;
+  margin:8px 0;
+  padding:11px 12px;
+  border:2px solid #9b6d36;
+  border-radius:10px;
+  background:#f7e5be;
+  font-weight:900;
+  font-size:18px;
+}
+.wishList{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+  margin:10px 0 12px;
+  text-align:left;
+}
+.wishChip{
+  padding:7px 9px;
+  border-radius:8px;
+  border:1px solid #a47b4f;
+  background:#e7c793;
+  font-size:13px;
+  line-height:1.25;
+}
+.wheelButtons{
+  display:flex;
+  justify-content:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+#beginGame:disabled{
+  opacity:.4;
+}
+@media(max-width:620px){
+  .headerActions{width:100%}
+  .headerActions button{flex:1}
+  .wishList{grid-template-columns:1fr}
+}
+
+/* колесо */
+.wheelSector{
+  stroke:#6a451f;
+  stroke-width:2.2;
+}
+.wheelLabel{
+  font:800 13px Arial,sans-serif;
+  fill:#2a1b12;
+  paint-order:stroke;
+  stroke:#fff6df;
+  stroke-width:2.5px;
+  stroke-linejoin:round;
+}
+
+/* V19 — активная музыка */
+#musicToggle{
+  background:linear-gradient(180deg,#ffe49c,#d89b38);
+  border:2px solid #7d4b19;
+  box-shadow:0 0 0 2px #ffe8a855 inset,0 3px 7px #0004;
+  font-weight:900;
+}
+#musicToggle:hover{filter:brightness(1.08)}
+
+/* V20 — состояние кнопки броска видно сразу */
+#roll:not(:disabled){
+  background:linear-gradient(180deg,#ffd778,#e8a43b);
+  border:2px solid #70431c;
+  color:#24150b;
+  opacity:1;
+  box-shadow:0 3px 8px #0004,inset 0 1px #fff8;
+  font-weight:900;
+}
+#roll:disabled{opacity:.38}
+
+/* ===== V24 — главное меню режимов ===== */
+.mainMenuDialog{
+  width:min(560px,94vw);
+  text-align:center;
+  padding:30px 26px 28px;
+  background:linear-gradient(180deg,#f6e3bd,#e4bd80);
+  box-shadow:0 18px 50px #0008,inset 0 1px 0 #fff9;
+}
+.menuLogo{
+  font:900 clamp(34px,7vw,56px) Georgia,serif;
+  letter-spacing:2px;
+  color:#3d2314;
+  text-shadow:0 2px 0 #f4cf8c;
+}
+.menuSubtitle{margin:4px 0 22px;font-weight:800;color:#745031}
+.mainMenuButtons{display:grid;gap:12px}
+.mainMenuButtons button{
+  min-height:68px;
+  display:grid;
+  grid-template-columns:46px 1fr;
+  align-items:center;
+  text-align:left;
+  padding:10px 16px;
+  font-size:18px;
+  background:linear-gradient(180deg,#f9dfa9,#dca55f);
+  box-shadow:0 4px 0 #7a4925,0 8px 15px #0003,inset 0 1px #fff9;
+  transition:transform .12s ease,filter .12s ease;
+}
+.mainMenuButtons button:hover{transform:translateY(-2px);filter:brightness(1.04)}
+.mainMenuButtons button:active{transform:translateY(2px);box-shadow:0 2px 0 #7a4925}
+.menuNum{
+  width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  background:#70401f;color:#ffe3a7;border:2px solid #3f2415;font:900 18px Georgia,serif;
+}
+.dialogActions{display:flex;gap:8px;justify-content:space-between;margin-top:16px;flex-wrap:wrap}
+.onlineDialog p{line-height:1.45}
+.onlinePreview,.onlineHint{
+  margin:14px 0;padding:12px;border-radius:9px;background:#d7b27a66;border:1px solid #9b7043;
+}
+.onlineDialog input{
+  width:100%;margin-top:6px;padding:12px 14px;border:2px solid #765034;border-radius:9px;
+  background:#fff6e5;font:800 21px Arial,sans-serif;letter-spacing:3px;
+}
+@media(max-width:520px){
+  .mainMenuDialog{padding:24px 16px}
+  .mainMenuButtons button{font-size:16px;grid-template-columns:40px 1fr}
+}
+
+
+/* V25 ONLINE */
+.onlineDialog input{
+  width:100%; box-sizing:border-box; margin-top:6px; padding:11px 12px;
+  border:2px solid #9b6d36; border-radius:9px; background:#fff4d8;
+  color:#2e1a0e; font:700 16px system-ui,sans-serif;
+}
+.onlineError{min-height:22px;color:#a31621;font-weight:800;margin:6px 0 2px}
+.lobbyDialog{width:min(520px,92vw)}
+.roomCodeBox{
+  margin:10px 0 14px; padding:13px; border:2px solid #8b5b2d; border-radius:12px;
+  background:#f3dbab; display:grid; grid-template-columns:1fr auto; gap:5px 10px; align-items:center;
+}
+.roomCodeBox small{grid-column:1/-1;font-weight:800;opacity:.7}
+.roomCodeBox strong{font:900 34px/1 Georgia,serif;letter-spacing:7px;color:#5a3018}
+.roomCodeBox button{padding:8px 10px}
+.connectionState{padding:8px 10px;border-radius:8px;background:#ead0a0;font-weight:800;margin-bottom:10px}
+.connectionState.ok{background:#d8edc4;color:#315b1b}
+.connectionState.bad{background:#f4c8c8;color:#8c1e24}
+.lobbyTitle{font-weight:1000;text-align:left;margin:8px 0}
+.lobbyPlayers{display:grid;gap:7px;margin-bottom:10px}
+.lobbyPlayer{
+  display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid #a57b4e;
+  border-radius:9px;background:#f7e4bc;font-weight:800;text-align:left;
+}
+.lobbyDot{width:17px;height:17px;border-radius:50%;border:2px solid #3a2416;flex:0 0 auto}
+.lobbyPlayer .you{margin-left:auto;font-size:12px;opacity:.7}
+.lobbyPlayer.offline{opacity:.5}
+.onlineBadge{
+  display:inline-block;margin-left:8px;padding:3px 7px;border-radius:999px;background:#d6ebff;
+  color:#164b8c;font-size:12px;vertical-align:middle;
+}
+#startOnlineGame:disabled{opacity:.4}
+@media(max-width:520px){
+  .roomCodeBox{grid-template-columns:1fr}.roomCodeBox button{width:100%}
+}
