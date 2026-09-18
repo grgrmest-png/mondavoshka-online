@@ -121,6 +121,44 @@ let musicStep=0;
 const MEDIEVAL_SCALE=[0,2,3,5,7,9,10,12]; // дорийский лад
 
 function E(t,a={},p=svg){let e=document.createElementNS(NS,t);for(const[k,v]of Object.entries(a))e.setAttribute(k,v);p.appendChild(e);return e}
+
+function svgClientPoint(ev){
+  try{
+    const pt=svg.createSVGPoint();
+    pt.x=ev.clientX;pt.y=ev.clientY;
+    const matrix=svg.getScreenCTM();
+    return matrix?pt.matrixTransform(matrix.inverse()):null;
+  }catch{return null}
+}
+function mobileSelectablePieces(){
+  if(!g)return[];
+  if(g.tripleKushPending)return tripleKushEligible(g.turn);
+  const steps=stepsNow();
+  if(steps==null)return[];
+  return player().pieces.filter(pc=>legal(pc,steps,false,!!g.trapOnlySelection));
+}
+function nearestSelectablePiece(point,maxDist=70){
+  if(!point||!g)return null;
+  let best=null,bestD=Infinity;
+  for(const pc of mobileSelectablePieces()){
+    const p=pos(pc,g.players[pc.owner]);
+    const d=Math.hypot(point.x-p[0],point.y-p[1]);
+    if(d<bestD&&d<=maxDist){best=pc;bestD=d}
+  }
+  return best;
+}
+function installMobileBoardTapAssist(){
+  if(svg.dataset.mobileTapAssist==="1")return;
+  svg.dataset.mobileTapAssist="1";
+  svg.addEventListener("click",(ev)=>{
+    if(ev.target?.closest?.(".piece"))return;
+    if(!g||animating)return;
+    if(onlineActive()&&!onlineCanAct())return;
+    const pc=nearestSelectablePiece(svgClientPoint(ev));
+    if(pc)pieceClick(pc);
+  });
+}
+
 function drawBoard(){
  svg.innerHTML="";
  const defs=E("defs");
@@ -258,6 +296,7 @@ function activateGameState(state,mode="local",statusText="Бросьте две 
  animating=false;
  setStatus(statusText);
  drawBoard();
+installMobileBoardTapAssist();
  updateUI();
  updatePenaltyCard();
  startMusic();
@@ -424,7 +463,10 @@ function renderPieces(){
     E("path",{d:`M${p[0]-12} ${p[1]-16} L${p[0]-2} ${p[1]+16} M${p[0]+2} ${p[1]-16} L${p[0]+12} ${p[1]+16}`,stroke:"#6a3516","stroke-width":3.4,"stroke-linecap":"round",opacity:.9},grp);
   }
   E("ellipse",{cx:p[0]-6,cy:p[1]-8,rx:7,ry:4,fill:"#fff",opacity:.28},grp);
-  grp.addEventListener("click",()=>pieceClick(pc));
+  grp.addEventListener("click",(ev)=>{
+    ev.stopPropagation();
+    pieceClick(pc);
+  });
  });
 }
 
