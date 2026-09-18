@@ -31,6 +31,7 @@ function cors(h={}){return {"access-control-allow-origin":"*","access-control-al
 function json(res,status,obj){res.writeHead(status,cors({"content-type":"application/json; charset=utf-8","cache-control":"no-store"}));res.end(JSON.stringify(obj))}
 function readBody(req,limit=200000){return new Promise((resolve,reject)=>{let b="";req.on("data",c=>{b+=c;if(b.length>limit){reject(new Error("too large"));req.destroy()}});req.on("end",()=>resolve(b));req.on("error",reject)})}
 function safeName(x){return String(x||"Игрок").replace(/[<>\u0000-\u001f]/g,"").trim().slice(0,24)||"Игрок"}
+function safeChatText(x){return String(x||"").replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,80)}
 function safeProfileId(x){return String(x||"").replace(/[^a-zA-Z0-9_.:-]/g,"").slice(0,120)}
 function safeSkin(x){const s=String(x||"default");return POINT_SKINS.has(s)||Object.values(PREMIUM_PRODUCTS).includes(s)?s:"default"}
 function getProfile(id,name=null,seed=null){
@@ -423,6 +424,23 @@ function onMessage(ws,m){
    if(!room.players.filter(x=>!x.bot).length)rooms.delete(room.code);
    return;
  }
+ if(m.type==="chat_message"){
+   if(!room.started)return err(ws,"Чат доступен после начала партии.");
+   if(p.bot)return;
+   const now=Date.now();
+   if(now-(p.lastChatAt||0)<650)return;
+   const text=safeChatText(m.text);
+   if(!text)return;
+   p.lastChatAt=now;
+   broadcast(room,{
+     type:"chat_message",
+     seat:p.seat,
+     name:p.name,
+     text,
+     ts:now
+   });
+   return;
+ }
  if(m.type==="start_game"){
    if(!p.host)return err(ws,"Начать игру может только создатель комнаты.");
    const real=room.players.filter(x=>!x.bot&&x.connected);if(real.length<2)return err(ws,"Для игры нужны минимум 2 реальных игрока.");
@@ -524,4 +542,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V40: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V41: http://localhost:${PORT}`));
