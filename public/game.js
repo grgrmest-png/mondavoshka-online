@@ -14,6 +14,8 @@ const YARD={blue:[[390,82],[445,82],[500,82],[555,82],[610,82]],whiteblue:[[918,
 const HOME={blue:[[500,245],[500,295],[500,345],[500,395],[500,445]],whiteblue:[[755,500],[705,500],[655,500],[605,500],[555,500]],red:[[500,755],[500,705],[500,655],[500,605],[500,555]],black:[[245,500],[295,500],[345,500],[395,500],[445,500]]};
 // "Говно" как отдельная дорожка 1 -> 3 -> 6 на краях поля.
 const TRAP_ENTRY=new Set([3,15,27,39]), NEED=[1,3,6];
+// Угловая клетка защищает стоящую на ней фишку: сбить её можно только кушем (дублем).
+const CORNERS=new Set([0,12,24,36]);
 const TRAP={
   // Верх: визуально 1,3,6 слева направо. Стоит ПАРАЛЛЕЛЬНО верхнему ряду.
   blue:[[670,88],[727,88],[783,88]],
@@ -185,11 +187,19 @@ function drawBoard(){
 }function player(){return g.players[g.turn]}
 function buildGameState(n,wish=selectedWish){
  return {
-   players:C.slice(0,n).map((c,owner)=>({...c,owner,pieces:Array.from({length:5},(_,i)=>({id:c.id+i,owner,n:i,state:"yard",track:null,progress:0,trap:0,trapSide:null,captorSide:null}))})),
-   turn:0,d:[0,0],used:[false,false],selected:null,sum:false,rolled:false,double:false,
+   players:C.slice(0,n).map((c,owner)=>({...c,owner,pieces:Array.from({length:5},(_,i)=>({
+     id:c.id+i,owner,n:i,state:"yard",track:null,progress:0,homeIndex:null,
+     trap:0,trapSide:null,captorSide:null
+   }))})),
+   turn:0,d:[1,1],used:[false,false],selected:null,sum:false,rolled:false,double:false,
+   trapOnlySelection:false,
+   forcedSix:false,
+   resumeStack:[],
+   pendingGiftSeat:null,
    forfeit:wish
  };
 }
+
 function activateGameState(state,mode="local",statusText="Бросьте две кости."){
  yandexGameplayStart();
  gameMode=mode;
@@ -216,12 +226,14 @@ function restoreDiceFromState(){
  if(!g)return;
  if(!g.rolled){clearDice();return;}
  dice.forEach((b,i)=>{
-   b.querySelector("span").dataset.v=g.d[i];
+   const v=Number(g.d[i]);
+   b.querySelector("span").dataset.v=String(v>=1&&v<=6?v:1);
    b.classList.toggle("active",g.selected===i);
    b.disabled=!!g.used[i];
  });
  $("#sum").disabled=true;
 }
+
 function applyOnlineSnapshot(state,statusText){
  if(!state)return;
  gameMode="online";
@@ -256,10 +268,13 @@ function prisonSlotIndex(pc){
 function renderPieces(){
  if(!g)return;
  svg.querySelectorAll(".piece,.route,.shards").forEach(e=>e.remove());
- if(preview&&preview.path.length){
-   let pts=preview.path.map(i=>TRACK[i].join(",")).join(" ");
-   E("polyline",{points:pts,class:"route"});
-   preview.path.forEach(i=>svg.querySelector(`[data-cell="${i}"]`)?.classList.add("path"));
+ if(preview){
+   const coords=preview.routeCoords||[];
+   if(coords.length){
+     let pts=coords.map(p=>p.join(",")).join(" ");
+     E("polyline",{points:pts,class:"route"});
+   }
+   (preview.path||[]).forEach(i=>svg.querySelector(`[data-cell="${i}"]`)?.classList.add("path"));
    if(preview.dest!=null)svg.querySelector(`[data-cell="${preview.dest}"]`)?.classList.add("dest");
    if(preview.jumpTo!=null)svg.querySelector(`[data-cell="${preview.jumpTo}"]`)?.classList.add("jumpdest");
  }
@@ -275,20 +290,22 @@ function renderPieces(){
   let grp=E("g",{"data-id":pc.id,class:cls});
   E("ellipse",{cx:p[0],cy:p[1]+8,rx:23,ry:10,fill:"#180d08",opacity:.34},grp);
   E("circle",{cx:p[0],cy:p[1]+4,r:22,fill:"#111",stroke:"#050505","stroke-width":2},grp);
-  const grad = pc.state==="captured"
-    ? "url(#captivePiece)"
-    : (pl.id==="red"?"url(#redPiece)":pl.id==="blue"?"url(#bluePiece)":pl.id==="black"?"url(#blackPiece)":"url(#whitePiece)");
-  E("circle",{cx:p[0],cy:p[1],r:21,fill:grad,stroke:"#17100c","stroke-width":3,filter:"url(#pieceShadow)"},grp);
-  if(pl.id==="whiteblue" && pc.state!=="captured"){
+
+  // Пленный сохраняет СВОЙ цвет. Так сразу видно, чья именно фишка сидит в плену.
+  const grad = pl.id==="red"?"url(#redPiece)":pl.id==="blue"?"url(#bluePiece)":pl.id==="black"?"url(#blackPiece)":"url(#whitePiece)";
+  E("circle",{cx:p[0],cy:p[1],r:21,fill:grad,stroke:pc.state==="captured"?"#9b5b20":"#17100c","stroke-width":pc.state==="captured"?5:3,filter:"url(#pieceShadow)"},grp);
+  if(pl.id==="whiteblue"){
     E("path",{d:`M${p[0]-15} ${p[1]}h30 M${p[0]} ${p[1]-15}v30`,stroke:"#164b8c","stroke-width":8,"stroke-linecap":"round"},grp);
   }
   if(pc.state==="captured"){
-    E("path",{d:`M${p[0]-9} ${p[1]-7} L${p[0]+8} ${p[1]+8} M${p[0]-3} ${p[1]+10} L${p[0]+9} ${p[1]-2}`,stroke:"#6a3516","stroke-width":3,"stroke-linecap":"round"},grp);
+    // Две решётки поверх родного цвета — признак пленника, не перекрашиваем его в коричневый.
+    E("path",{d:`M${p[0]-12} ${p[1]-16} L${p[0]-2} ${p[1]+16} M${p[0]+2} ${p[1]-16} L${p[0]+12} ${p[1]+16}`,stroke:"#6a3516","stroke-width":3.4,"stroke-linecap":"round",opacity:.9},grp);
   }
   E("ellipse",{cx:p[0]-6,cy:p[1]-8,rx:7,ry:4,fill:"#fff",opacity:.28},grp);
   grp.addEventListener("click",()=>pieceClick(pc));
  });
 }
+
 function trapSideByEntry(idx){
   for(const [side,meta] of Object.entries(TRAP_META)) if(meta.entry===idx) return side;
   return null;
@@ -297,9 +314,10 @@ function pos(pc,pl){
   if(pc.state==="yard") return YARD[pl.id][pc.n];
   if(pc.state==="captured") return YARD[pc.captorSide][prisonSlotIndex(pc)];
   if(pc.state==="trap") return TRAP[pc.trapSide || pl.id][pc.trap];
-  if(pc.state==="home"){let k=pl.pieces.filter(x=>x.state==="home"&&x.n<=pc.n).length-1;return HOME[pl.id][Math.max(0,k)]}
-  return TRACK[pc.track]
+  if(pc.state==="home") return HOME[pl.id][Math.max(0,Math.min(4,Number(pc.homeIndex)||0))];
+  return TRACK[pc.track];
 }
+
 function roll(){
  if(animating||!g||g.rolled)return;
  if(onlineActive()){
@@ -334,7 +352,7 @@ function applyRollValues(r,fromNetwork=false){
  }
  setStatus("Кубики летят…");
  setTimeout(()=>{
-   g.d=[Number(r[0]),Number(r[1])];
+   g.d=[0,1].map(i=>{const v=Number(r[i]);return v>=1&&v<=6?Math.floor(v):1;});
    g.used=[false,false];
    g.rolled=true;
    g.double=g.d[0]===g.d[1];
@@ -353,66 +371,106 @@ function applyRollValues(r,fromNetwork=false){
 }
 function beginOrderedDice(){
  if(!g||!g.rolled)return;
+ g.trapOnlySelection=false;
 
  const unused=[0,1].filter(i=>!g.used[i]);
  if(!unused.length){finishTurn();return;}
 
- let next;
- if(unused.length===2){
-   next = g.d[0]>=g.d[1] ? 0 : 1;   // сначала большая
- }else{
-   next=unused[0];                    // затем оставшаяся, то есть меньшая
- }
-
- const value=g.d[next];
- const canMove=player().pieces.some(p=>legal(p,value,false));
-
- if(!canMove){
-   g.used[next]=true;
-   dice[next].disabled=true;
-
-   const left=[0,1].filter(i=>!g.used[i]);
-   if(left.length){
-     const second=left[0];
-     const canSecond=player().pieces.some(p=>legal(p,g.d[second],false));
-     if(canSecond){
-       dice[second].disabled=false;
-       setStatus(`Большей костью ${value} сходить нельзя. Она пропускается. Теперь ходим меньшей костью ${g.d[second]}.`);
-       selectDie(second);
-       return;
-     }
-     g.used[second]=true;
+ // Переданная за выкуп шестёрка — это один отдельный ход.
+ if(g.forcedSix){
+   const i=unused[0];
+   const moves=legalMovesForValue(g.d[i],false);
+   if(!moves.length){
+     g.used[i]=true;
+     setStatus(`${player().name}: переданной шестёркой сходить нельзя. Право хода возвращается.`);
+     finishTurn();
+     return;
    }
-
-   // Никаких зависаний и ожиданий: сразу передаём ход.
-   const oldName=player().name;
-   finishTurn();
-   setStatus(`${oldName}: этими костями ходов нет. Ход передан игроку ${player().name}. Бросайте кости.`);
-   $("#roll").disabled=false;
+   dice.forEach((b,j)=>b.disabled=j!==i);
+   selectDie(i);
+   setStatus(`${player().name} получает шестёрку за выкуп пленника. Сделайте один ход на 6.`);
    return;
  }
 
- dice[next].disabled=false;
- const unusedCount=unused.length;
- if(unusedCount===2 && g.d[0]!==g.d[1]){
-   const low=Math.min(g.d[0],g.d[1]);
-   setStatus(`Выпало ${g.d[0]} и ${g.d[1]}. Сначала ходим на ${value}. Нажмите зелёную фишку. Затем ходим на ${low}.`);
- }else if(unusedCount===2){
-   setStatus(`Дубль ${value}:${value}. Сыграйте первую ${value}.`);
- }else{
+ if(unused.length===1){
+   const i=unused[0], value=g.d[i];
+   const moves=legalMovesForValue(value,false);
+   if(!moves.length){g.used[i]=true;finishTurn();return;}
+   dice.forEach((b,j)=>b.disabled=j!==i);
+   selectDie(i);
    setStatus(`Теперь ходим второй костью: ${value}.`);
+   return;
  }
- selectDie(next);
+
+ // Дубль: обе кости одинаковы, поэтому порядок между ними значения не имеет.
+ if(g.d[0]===g.d[1]){
+   const i=0;
+   const moves=legalMovesForValue(g.d[i],false);
+   if(!moves.length){g.used=[true,true];finishTurn();return;}
+   dice[0].disabled=false; dice[1].disabled=true;
+   selectDie(0);
+   setStatus(`Куш ${g.d[0]}:${g.d[1]}. Сыграйте первую ${g.d[0]}. Угловые фишки соперника можно сбивать.`);
+   return;
+ }
+
+ const highIndex=g.d[0]>g.d[1]?0:1;
+ const lowIndex=highIndex===0?1:0;
+ const high=g.d[highIndex], low=g.d[lowIndex];
+ const highMoves=legalMovesForValue(high,false);
+ const lowTrapMoves=legalMovesForValue(low,true);
+
+ dice.forEach(b=>b.disabled=true);
+
+ if(highMoves.length){
+   dice[highIndex].disabled=false;
+   // Исключение: меньшую кость разрешаем выбрать первой ТОЛЬКО для движения внутри ловушки.
+   if(lowTrapMoves.length)dice[lowIndex].disabled=false;
+   selectDie(highIndex);
+   setStatus(lowTrapMoves.length
+     ? `Выпало ${g.d[0]} и ${g.d[1]}. Обычно сначала ${high}. Но в ловушке можно сначала выбрать ${low}.`
+     : `Выпало ${g.d[0]} и ${g.d[1]}. Сначала ходим на ${high}, затем на ${low}.`);
+   return;
+ }
+
+ // Если большая сейчас не играет, но меньшая может двигать фишку в ловушке —
+ // меньшую играем первой и потом заново проверяем большую.
+ if(lowTrapMoves.length){
+   dice[lowIndex].disabled=false;
+   selectDie(lowIndex);
+   setStatus(`Большая ${high} сейчас не играет. В ловушке можно сначала сходить на ${low}.`);
+   return;
+ }
+
+ // Обычное правило: если большой сходить невозможно, она пропускается и проверяется меньшая.
+ g.used[highIndex]=true;
+ const lowMoves=legalMovesForValue(low,false);
+ if(lowMoves.length){
+   dice[lowIndex].disabled=false;
+   selectDie(lowIndex);
+   setStatus(`Большей костью ${high} сходить нельзя. Она пропускается. Ходим на ${low}.`);
+   return;
+ }
+ g.used[lowIndex]=true;
+ const oldName=player().name;
+ finishTurn();
+ if(g && !g.rolled)setStatus(`${oldName}: этими костями ходов нет. Ход передан игроку ${player().name}. Бросайте кости.`);
 }
+
 function selectDie(i){
  if(!g.rolled||g.used[i]||animating||dice[i].disabled)return;
 
+ g.trapOnlySelection=false;
  const unused=[0,1].filter(j=>!g.used[j]);
- if(unused.length===2 && g.d[0]!==g.d[1]){
+ if(!g.forcedSix && unused.length===2 && g.d[0]!==g.d[1]){
    const highIndex=g.d[0]>g.d[1]?0:1;
    if(i!==highIndex){
-     setStatus(`Сначала нужно использовать большую кость ${g.d[highIndex]}, затем меньшую ${g.d[i]}.`);
-     return;
+     // Меньшая раньше большей разрешена только если этой костью реально можно двигать фишку ВНУТРИ ловушки.
+     const trapMoves=legalMovesForValue(g.d[i],true);
+     if(!trapMoves.length){
+       setStatus(`Сначала нужно использовать большую кость ${g.d[highIndex]}. Исключение действует только внутри ловушки.`);
+       return;
+     }
+     g.trapOnlySelection=true;
    }
  }
 
@@ -422,168 +480,274 @@ function selectDie(i){
  dice.forEach((b,j)=>b.classList.toggle("active",i===j));
  $("#sum").classList.remove("active");
  const moves=currentLegal();
-
- if(!moves.length){
-   setStatus(`Кость ${g.d[i]} сейчас не даёт допустимого хода.`);
- }else{
-   setStatus(`Ходим на ${g.d[i]}. Зелёным подсвечены допустимые фишки.`);
- }
+ if(!moves.length)setStatus(`Кость ${g.d[i]} сейчас не даёт допустимого хода.`);
+ else if(g.trapOnlySelection)setStatus(`Ходим на ${g.d[i]} внутри ловушки. Выберите зелёную фишку в ловушке.`);
+ else setStatus(`Ходим на ${g.d[i]}. Зелёным подсвечены допустимые фишки.`);
  resetCellClasses();
- renderPieces()
+ renderPieces();
 }
+
 function selectSum(){
  setStatus("В этой версии игры ход суммой отключён. Нужно сходить сначала одной костью, потом второй — как в правилах Мондавошки.");
 }
 function stepsNow(){return g.selected==null?null:g.d[g.selected]}
-function legal(pc,steps,sourceSum=g.sum){
- if(steps==null||pc.owner!==g.turn||pc.state==="home") return null;
- let pl=player();
+function isKush(){return !!(g&&g.rolled&&g.d[0]===g.d[1]&&!g.forcedSix)}
+function homeOcc(owner,idx,except=null){
+ return g.players[owner].pieces.find(p=>p.id!==except&&p.state==="home"&&Number(p.homeIndex)===idx)||null;
+}
+function canCaptureAt(idx,owner){
+ const enemy=enemyAt(idx,owner);
+ if(!enemy)return true;
+ return !CORNERS.has(idx)||isKush();
+}
+function canPushTrap(side,idx){
+ const occ=trapOcc(side,idx);
+ if(!occ)return true;
+ const next=idx+1;
+ if(next>=3){
+   const exit=TRAP_META[side].exit;
+   return !ownAt(exit,occ.owner);
+ }
+ return canPushTrap(side,next);
+}
+function legalMovesForValue(value,trapOnly=false){
+ if(!g||value==null)return[];
+ return player().pieces.map(p=>legal(p,value,false,trapOnly)).filter(Boolean);
+}
 
- // Пленную фишку отдельная шестёрка только возвращает домой, а не выводит на поле.
+function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
+ if(steps==null||pc.owner!==g.turn) return null;
+ if(trapOnly && pc.state!=="trap") return null;
+ const pl=player();
+
+ // Пленную фишку шестёрка выкупает. Сама шестёрка затем передаётся тому игроку, у кого был пленник.
  if(pc.state==="captured"){
-   if(sourceSum||steps!==6) return null;
-   return {id:pc.id,rescue:true,path:[],dest:null};
+   if(trapOnly||sourceSum||steps!==6) return null;
+   return {id:pc.id,rescue:true,path:[],routeCoords:[],dest:null};
  }
 
  if(pc.state==="yard"){
-   if(sourceSum||steps!==6) return null;
-   let s=START[pl.id];
+   if(trapOnly||sourceSum||steps!==6) return null;
+   const s=START[pl.id];
    if(ownAt(s,pc.owner)) return null;
-   return {id:pc.id,path:[s],dest:s,exit:true};
+   if(!canCaptureAt(s,pc.owner)) return null;
+   return {id:pc.id,path:[s],route:[{kind:"track",index:s}],routeCoords:[TRACK[s]],dest:s,finalKind:"track",exit:true};
  }
 
  if(pc.state==="trap"){
    if(sourceSum||steps!==NEED[pc.trap]) return null;
-   return {id:pc.id,path:[],dest:null,trap:true};
+   const next=pc.trap+1;
+   if(next<3 && !canPushTrap(pc.trapSide,next))return null;
+   if(next>=3){
+     const exit=TRAP_META[pc.trapSide].exit;
+     if(ownAt(exit,pc.owner))return null;
+     if(!canCaptureAt(exit,pc.owner))return null;
+   }
+   return {id:pc.id,path:[],routeCoords:[],dest:null,trap:true};
  }
 
- let path=[];
- for(let k=1;k<=steps;k++){
-   let idx=(pc.track-1+TRACK.length)%TRACK.length;
-   if(path.length) idx=(path[path.length-1]-1+TRACK.length)%TRACK.length;
-   if(k<steps&&anyAt(idx,pc.id)) return null;
-   path.push(idx);
+ // Внутренняя дорожка Домика: движение идёт по клеткам, без прыжков через свои фишки.
+ if(pc.state==="home"){
+   if(trapOnly)return null;
+   const from=Number(pc.homeIndex);
+   if(!Number.isInteger(from))return null;
+   const to=from+steps;
+   if(to>4)return null;
+   const homePath=[];
+   for(let h=from+1;h<=to;h++){
+     if(homeOcc(pc.owner,h,pc.id))return null;
+     homePath.push(h);
+   }
+   return {id:pc.id,homeMove:true,path:[],homePath,route:homePath.map(index=>({kind:"home",index})),routeCoords:homePath.map(index=>HOME[pl.id][index]),destHome:to,finalKind:"home"};
  }
- let dest=path.at(-1);
- if(ownAt(dest,pc.owner)) return null;
+
+ if(pc.state!=="track"||trapOnly)return null;
+
+ // Маршрут строится ПОШАГОВО. При первом возвращении к своей БАЗЕ фишка
+ // НЕ обязана становиться на базу: следующий шаг сразу переводит её в первую клетку Домика.
+ const route=[];
+ let track=pc.track;
+ let inHome=false;
+ let homeIndex=-1;
+ for(let k=1;k<=steps;k++){
+   if(!inHome){
+     const next=(track-1+TRACK.length)%TRACK.length;
+     if(next===START[pl.id] && track!==START[pl.id]){
+       inHome=true;
+       homeIndex=0;
+       if(homeOcc(pc.owner,0,pc.id))return null;
+       route.push({kind:"home",index:0});
+     }else{
+       track=next;
+       route.push({kind:"track",index:track});
+     }
+   }else{
+     homeIndex++;
+     if(homeIndex>4)return null;
+     if(homeOcc(pc.owner,homeIndex,pc.id))return null;
+     route.push({kind:"home",index:homeIndex});
+   }
+ }
+
+ // Через любую фишку на внешней дороге перепрыгивать нельзя.
+ for(let i=0;i<route.length-1;i++){
+   const t=route[i];
+   if(t.kind==="track"&&anyAt(t.index,pc.id))return null;
+ }
+
+ const last=route.at(-1);
+ const path=route.filter(t=>t.kind==="track").map(t=>t.index);
+ const homePath=route.filter(t=>t.kind==="home").map(t=>t.index);
+ const routeCoords=route.map(t=>t.kind==="track"?TRACK[t.index]:HOME[pl.id][t.index]);
+
+ if(last.kind==="home"){
+   return {id:pc.id,path,homePath,route,routeCoords,dest:null,destHome:last.index,finalKind:"home"};
+ }
+
+ const dest=last.index;
+ if(ownAt(dest,pc.owner))return null;
+ if(!canCaptureAt(dest,pc.owner))return null;
+
+ // В ловушку можно войти только если цепочка реально может протолкнуться.
+ if(TRAP_ENTRY.has(dest)){
+   const side=trapSideByEntry(dest);
+   if(!canPushTrap(side,0))return null;
+ }
 
  const jump=DIAG_MAP[dest];
- if(jump && ownAt(jump.to,pc.owner)) return null;
-
- return {id:pc.id,path,dest,jumpTo:jump?jump.to:null};
+ if(jump){
+   if(ownAt(jump.to,pc.owner))return null;
+   if(!canCaptureAt(jump.to,pc.owner))return null;
+ }
+ return {id:pc.id,path,homePath,route,routeCoords,dest,jumpTo:jump?jump.to:null,finalKind:"track"};
 }
-function currentLegal(){let s=stepsNow();if(s==null)return[];return player().pieces.map(p=>legal(p,s)).filter(Boolean)}
+
+function currentLegal(){
+ let s=stepsNow();
+ if(s==null)return[];
+ return player().pieces.map(p=>legal(p,s,false,!!g.trapOnlySelection)).filter(Boolean);
+}
+
 async function pieceClick(pc){
  if(animating||pc.owner!==g.turn)return;
  if(onlineActive()&&!onlineCanAct()){setStatus(`Сейчас ходит ${player().name}. Ожидайте своей очереди.`);window.MondavoshkaOnline.refreshControls();return;}
- let mv=legal(pc,stepsNow());if(!mv){setStatus("Этой фишкой так сходить нельзя.");return}
+ const mv=legal(pc,stepsNow(),false,!!g.trapOnlySelection);
+ if(!mv){setStatus("Этой фишкой так сходить нельзя.");return;}
  if(preview?.id!==pc.id){
    preview=mv;
    resetCellClasses();
    renderPieces();
-   if(mv.rescue) setStatus("Эта шестёрка выкупит пленную фишку и вернёт её в домашнюю ячейку.");
-   else if(mv.jumpTo!=null) setStatus(`После обычного хода фишка попадёт на стрелку и перейдёт на клетку назначения.`);
+   if(mv.rescue) setStatus("Шестёрка выкупит пленника. Затем право одного хода на 6 получит игрок, у которого был пленник.");
+   else if(mv.homeMove||mv.finalKind==="home") setStatus("Ход внутри Домика идёт по клеткам. Нажмите фишку ещё раз для подтверждения.");
+   else if(mv.jumpTo!=null) setStatus("После обычного хода фишка попадёт на стрелку и перейдёт на клетку назначения.");
    else if(TRAP_ENTRY.has(mv.dest)) setStatus("Конечная клетка ведёт в ловушку «говно».");
-   else if(mv.path && (pc.progress + mv.path.length)>=TRACK.length) setStatus("Этим ходом фишка завершит полный круг и войдёт во внутренний Домик.");
-   else setStatus("Маршрут по часовой стрелке показан. Нажмите эту фишку ещё раз, чтобы подтвердить ход.");
-   return
+   else setStatus("Маршрут показан. Нажмите эту фишку ещё раз, чтобы подтвердить ход.");
+   return;
  }
- preview=null;await execute(pc,mv);consume();
+ preview=null;
+ await execute(pc,mv);
+ consume();
  if(onlineActive()) window.MondavoshkaOnline.syncState();
 }
+
 async function execute(pc,mv){
  animating=true;resetCellClasses();
 
  if(pc.state==="captured" && mv.rescue){
    const pl=g.players[pc.owner];
+   const captorId=pc.captorSide;
+   const captor=g.players.find(x=>x.id===captorId);
    await animate(pc,[YARD[pl.id][pc.n]],420,"fly");
    pc.state="yard";
    pc.captorSide=null;
    pc.track=null;
    pc.progress=0;
+   pc.homeIndex=null;
    pc.trap=0;
    pc.trapSide=null;
-   setStatus("Пленная фишка выкуплена и вернулась в домашнюю ячейку.");
+   g.pendingGiftSeat=captor ? captor.owner : null;
+   setStatus(captor ? `Пленник выкуплен. Шестёрка передаётся игроку ${captor.name}.` : "Пленная фишка выкуплена и вернулась домой.");
  }
 
  else if(pc.state==="yard"){
    await animate(pc,[TRACK[mv.dest]],420,"walk");
-   let enemy=enemyAt(mv.dest,pc.owner);
-   if(enemy) await capture(enemy, player().id);
+   const enemy=enemyAt(mv.dest,pc.owner);
+   if(enemy)await capture(enemy,player().id);
    pc.state="track";
    pc.track=mv.dest;
    pc.progress=0;
+   pc.homeIndex=null;
    pc.captorSide=null;
  }
 
  else if(pc.state==="trap"){
    const side=pc.trapSide;
    const next=pc.trap+1;
-
    if(next>=3){
      const exit=TRAP_META[side].exit;
-     if(!ownAt(exit,pc.owner)){
-       let enemy=enemyAt(exit,pc.owner);
-       if(enemy) await capture(enemy, player().id);
-       await animate(pc,[TRACK[exit]],520,"fly");
-       pc.state="track";
-       pc.track=exit;
-       pc.trap=0;
-       pc.trapSide=null;
-       setStatus("Фишка вышла из ловушки.");
-     }else{
-       setStatus("Выход из ловушки занят своей фишкой.");
-     }
+     const enemy=enemyAt(exit,pc.owner);
+     if(enemy)await capture(enemy,player().id);
+     await animate(pc,[TRACK[exit]],520,"fly");
+     pc.state="track";
+     pc.track=exit;
+     pc.trap=0;
+     pc.trapSide=null;
+     setStatus("Фишка вышла из ловушки.");
    }else{
-     const ok=await pushTrap(side,next);
+     const ok=await pushTrapFrom(side,next);
      if(ok){
        await animate(pc,[TRAP[side][next]],300,"walk");
        pc.trap=next;
-       setStatus("Фишки в ловушке подтолкнулись.");
-     }else{
-       setStatus("В ловушке продвинуться нельзя.");
+       setStatus("Фишка продвинулась в ловушке и вытолкнула стоящих впереди.");
      }
    }
  }
 
- else{
-   await animate(pc,mv.path.map(i=>TRACK[i]),Math.max(220,mv.path.length*145),"walk");
-   let enemy=enemyAt(mv.dest,pc.owner);
-   if(enemy) await capture(enemy, player().id);
-   pc.track=mv.dest;
-   pc.progress+=mv.path.length;
+ else if(pc.state==="home"){
+   await animate(pc,(mv.homePath||[]).map(i=>HOME[g.players[pc.owner].id][i]),Math.max(220,(mv.homePath||[]).length*150),"walk");
+   pc.homeIndex=mv.destHome;
+   setStatus("Фишка продвинулась по клеткам Домика.");
+ }
 
-   const homeGate=START[g.players[pc.owner].id];
-   if(pc.progress>=TRACK.length){
+ else{
+   await animate(pc,mv.routeCoords||[],Math.max(220,(mv.routeCoords||[]).length*145),"walk");
+   pc.progress+=(mv.path||[]).length;
+
+   if(mv.finalKind==="home"){
      pc.state="home";
+     pc.homeIndex=mv.destHome;
      pc.track=null;
-     setStatus("Фишка завершила круг и вошла во внутренний Домик!");
-   }
-   else if(TRAP_ENTRY.has(pc.track)){
-     const side=trapSideByEntry(pc.track);
-     const ok=await pushTrap(side,0);
-     if(ok){
-       await animate(pc,[TRAP[side][0]],470,"fall");
-       pc.state="trap";
-       pc.trapSide=side;
-       pc.track=null;
-       pc.trap=0;
-       setStatus("Попали в ловушку: теперь нужно 1 → 3 → 6.");
-     }else{
-       setStatus("Ловушка переполнена.");
+     setStatus("Фишка завершила один круг и вошла на внутреннюю дорожку Домика.");
+   }else{
+     const enemy=enemyAt(mv.dest,pc.owner);
+     if(enemy)await capture(enemy,player().id);
+     pc.track=mv.dest;
+
+     if(TRAP_ENTRY.has(pc.track)){
+       const side=trapSideByEntry(pc.track);
+       const ok=await pushTrapFrom(side,0);
+       if(ok){
+         await animate(pc,[TRAP[side][0]],470,"fall");
+         pc.state="trap";
+         pc.trapSide=side;
+         pc.track=null;
+         pc.trap=0;
+         setStatus("Попали в ловушку: теперь нужно 1 → 3 → 6. Внутри ловушки порядок кубиков свободный.");
+       }
      }
-   }
-   else if(DIAG_MAP[pc.track]){
-     const jump=DIAG_MAP[pc.track];
-     await animate(pc,[TRACK[jump.to]],650,"fly");
-     let enemy2=enemyAt(jump.to,pc.owner);
-     if(enemy2) await capture(enemy2, player().id);
-     pc.track=jump.to;
-     setStatus(`Переход по стрелке ${jump.label}.`);
+     else if(DIAG_MAP[pc.track]){
+       const jump=DIAG_MAP[pc.track];
+       await animate(pc,[TRACK[jump.to]],650,"fly");
+       const enemy2=enemyAt(jump.to,pc.owner);
+       if(enemy2)await capture(enemy2,player().id);
+       pc.track=jump.to;
+       setStatus(`Переход по стрелке ${jump.label}.`);
+     }
    }
  }
  animating=false;drawBoard();
 }
+
 function animate(pc,points,dur,kind){return new Promise(res=>{let el=svg.querySelector(`[data-id="${pc.id}"]`);if(!el||!points.length){res();return}let start=pos(pc,g.players[pc.owner]);let frames=[{transform:`translate(0px,0px) scale(1)`}];points.forEach((p,i)=>{let dx=p[0]-start[0],dy=p[1]-start[1],scale=kind==="fly"&&i<points.length-1?1.25:1;frames.push({transform:`translate(${dx}px,${dy}px) scale(${scale}) rotate(${kind==="fly"?360*(i+1):0}deg)`})});let a=el.animate(frames,{duration:dur,easing:kind==="fly"?"cubic-bezier(.15,.8,.25,1)":"ease-in-out",fill:"forwards"});a.onfinish=res})}
 async function capture(pc, captorSide){
   const pl=g.players[pc.owner];
@@ -613,20 +777,22 @@ async function capture(pc, captorSide){
   pc.captorSide=captorSide;
   pc.track=null;
   pc.progress=0;
+  pc.homeIndex=null;
   pc.trap=0;
   pc.trapSide=null;
 }
 function trapPieces(side){return allPieces().filter(p=>p.state==="trap"&&p.trapSide===side)}
 function trapOcc(side,idx,except=null){return trapPieces(side).find(p=>p.trap===idx&&p.id!==except)}
-async function pushTrap(side, idx){
+async function pushTrap(side,idx){return pushTrapFrom(side,idx)}
+async function pushTrapFrom(side,idx){
  const occ=trapOcc(side,idx);
- if(!occ) return true;
-
- if(idx>=3){
+ if(!occ)return true;
+ const next=idx+1;
+ if(next>=3){
    const exit=TRAP_META[side].exit;
-   if(ownAt(exit,occ.owner)) return false;
+   if(ownAt(exit,occ.owner))return false;
    const enemy=enemyAt(exit,occ.owner);
-   if(enemy) await capture(enemy, g.players[occ.owner].id);
+   if(enemy)await capture(enemy,g.players[occ.owner].id);
    await animate(occ,[TRACK[exit]],420,"fly");
    occ.state="track";
    occ.track=exit;
@@ -634,13 +800,13 @@ async function pushTrap(side, idx){
    occ.trapSide=null;
    return true;
  }
-
- const ok=await pushTrap(side,idx+1);
- if(!ok) return false;
- await animate(occ,[TRAP[side][idx]],260,"walk");
- occ.trap=idx;
+ const ok=await pushTrapFrom(side,next);
+ if(!ok)return false;
+ await animate(occ,[TRAP[side][next]],260,"walk");
+ occ.trap=next;
  return true;
 }
+
 function anyAt(i,except=null){for(let pl of g.players)for(let p of pl.pieces)if(p.id!==except&&p.state==="track"&&p.track===i)return p;return null}
 function ownAt(i,o){return g.players[o].pieces.some(p=>p.state==="track"&&p.track===i)}
 function enemyAt(i,o){for(let pl of g.players)for(let p of pl.pieces)if(p.owner!==o&&p.state==="track"&&p.track===i)return p;return null}
@@ -650,29 +816,83 @@ function consume(){
  g.used[usedIndex]=true;
  g.selected=null;
  g.sum=false;
+ g.trapOnlySelection=false;
  preview=null;
 
- dice.forEach(b=>{
-   b.disabled=true;
-   b.classList.remove("active");
- });
+ dice.forEach(b=>{b.disabled=true;b.classList.remove("active");});
  $("#sum").classList.remove("active");
  $("#sum").disabled=true;
  resetCellClasses();
  renderPieces();
 
- if(g.used.every(Boolean)){
-   finishTurn();
+ // Выкуп пленника: использованная шестёрка не исчезает — право одного хода на 6
+ // передаётся тому, кто держал пленника. После этого исходный ход продолжается.
+ if(Number.isInteger(g.pendingGiftSeat)){
+   const seat=g.pendingGiftSeat;
+   g.pendingGiftSeat=null;
+   startGiftSix(seat);
    return;
  }
 
+ if(g.used.every(Boolean)){finishTurn();return;}
  beginOrderedDice();
 }
+function startGiftSix(seat){
+ if(!Number.isInteger(seat)||!g.players[seat]){beginOrderedDice();return;}
+ g.resumeStack=Array.isArray(g.resumeStack)?g.resumeStack:[];
+ g.resumeStack.push({
+   turn:g.turn,d:[...g.d],used:[...g.used],selected:null,sum:false,rolled:g.rolled,double:g.double,
+   trapOnlySelection:false,forcedSix:!!g.forcedSix
+ });
+ g.turn=seat;
+ g.d=[6,6];
+ g.used=[false,true];
+ g.selected=null;
+ g.sum=false;
+ g.rolled=true;
+ g.double=false;
+ g.forcedSix=true;
+ g.trapOnlySelection=false;
+ preview=null;
+ updateUI();
+ restoreDiceFromState();
+ renderPieces();
+ beginOrderedDice();
+}
+function restoreAfterGiftSix(){
+ const stack=Array.isArray(g.resumeStack)?g.resumeStack:[];
+ const resume=stack.pop();
+ if(!resume){
+   g.forcedSix=false;
+   g.rolled=false;
+   g.used=[false,false];
+   g.selected=null;
+   clearDice();
+   return;
+ }
+ Object.assign(g,resume);
+ g.resumeStack=stack;
+ g.pendingGiftSeat=null;
+ preview=null;
+ updateUI();
+ restoreDiceFromState();
+ renderPieces();
+ if(g.used.every(Boolean))finishTurn();
+ else beginOrderedDice();
+}
+
 function finishTurn(){
+ // Победа проверяется и после обычного хода, и после переданной шестёрки.
  if(player().pieces.every(p=>p.state==="home")){
    setStatus(`${player().name} победил! Проигравший выполняет: ${g.forfeit || "желание с колеса"}.`);
    $("#roll").disabled=true;
    yandexGameplayStop();
+   return;
+ }
+
+ if(g.forcedSix){
+   g.forcedSix=false;
+   restoreAfterGiftSix();
    return;
  }
 
@@ -682,33 +902,38 @@ function finishTurn(){
  g.used=[false,false];
  g.selected=null;
  g.sum=false;
+ g.trapOnlySelection=false;
  preview=null;
  animating=false;
  clearDice();
 
- if(!extra){
-   g.turn=(g.turn+1)%g.players.length;
- }
-
+ if(!extra)g.turn=(g.turn+1)%g.players.length;
  updateUI();
  renderPieces();
 
- // Important: enable the next throw only AFTER every render/update operation.
- // A second tick protects against a stale disabled state in embedded browsers.
  const rollBtn=$("#roll");
  if(onlineActive()){
    rollBtn.disabled=true;
    requestAnimationFrame(()=>window.MondavoshkaOnline?.refreshControls());
  }else{
    rollBtn.disabled=false;
-   requestAnimationFrame(()=>{
-     if(g && !g.rolled && !animating) rollBtn.disabled=false;
-   });
+   requestAnimationFrame(()=>{if(g&&!g.rolled&&!animating)rollBtn.disabled=false;});
  }
-
- setStatus(extra ? "Дубль — бросайте ещё раз." : "Бросьте две кости.");
+ setStatus(extra ? "Куш — бросайте ещё раз." : "Бросьте две кости.");
 }
-function clearDice(){dice.forEach(b=>{b.disabled=true;b.classList.remove("active");b.querySelector("span").removeAttribute("data-v")});$("#sum").disabled=true;$("#sum").classList.remove("active")}
+
+function clearDice(){
+ dice.forEach((b,i)=>{
+   b.disabled=true;
+   b.classList.remove("active","rolling");
+   const span=b.querySelector("span");
+   const old=Number(span.dataset.v);
+   span.dataset.v=String(old>=1&&old<=6?old:1);
+ });
+ $("#sum").disabled=true;
+ $("#sum").classList.remove("active");
+}
+
 function resetCellClasses(){svg.querySelectorAll(".cell").forEach(e=>e.setAttribute("class","cell"+(Object.values(START).includes(+e.dataset.cell)?" start":"")+(TRAP_ENTRY.has(+e.dataset.cell)?" trap":"")))}
 
 function updatePenaltyCard(){

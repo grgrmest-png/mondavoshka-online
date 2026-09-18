@@ -6,32 +6,47 @@
   <script>
     window.ysdk = null;
     window.yandexSdkReady = false;
+    window.gameLanguage = 'ru';
 
     async function initYandexGamesSDK() {
       try {
         if (typeof YaGames === 'undefined') {
-          console.warn('Yandex Games SDK недоступен. При локальном запуске это нормально.');
+          // При локальном запуске /sdk.js недоступен — используем русский как fallback.
+          document.documentElement.lang = 'ru';
           return null;
         }
 
-        window.ysdk = await YaGames.init();
+        const ysdk = await YaGames.init();
+        window.ysdk = ysdk;
         window.yandexSdkReady = true;
-        console.log('Yandex Games SDK: Initialized');
 
-        // Сообщаем платформе, что интерфейс игры загружен и готов.
-        if (window.ysdk.features && window.ysdk.features.LoadingAPI) {
-          await window.ysdk.features.LoadingAPI.ready();
+        // Требование Яндекс Игр 2.14:
+        // язык определяется через SDK непосредственно при запуске игры.
+        const sdkLang = ysdk?.environment?.i18n?.lang || 'ru';
+        window.gameLanguage = sdkLang;
+        document.documentElement.lang = sdkLang;
+
+        // Сейчас у игры русская локализация. Если язык портала другой,
+        // используем русский как резервный набор текстов.
+        window.activeGameLanguage = (sdkLang === 'ru') ? 'ru' : 'ru';
+
+        console.log('Yandex Games SDK initialized. Portal language:', sdkLang);
+
+        if (ysdk.features && ysdk.features.LoadingAPI) {
+          await ysdk.features.LoadingAPI.ready();
         }
 
-        return window.ysdk;
+        return ysdk;
       } catch (err) {
         console.error('Ошибка инициализации Yandex Games SDK:', err);
+        document.documentElement.lang = 'ru';
         return null;
       }
     }
 
-    // SDK уже загружен предыдущим тегом script, поэтому инициализируем после разбора DOM.
-    document.addEventListener('DOMContentLoaded', initYandexGamesSDK);
+    // Определение языка запускается сразу после разбора документа,
+    // до начала самой игры.
+    document.addEventListener('DOMContentLoaded', initYandexGamesSDK, { once: true });
   </script>
 </head>
 <body>
@@ -48,10 +63,10 @@
 <aside>
 <div class="card"><small>Ход игрока</small><div id="player" class="player">—</div><div id="status">Начните игру</div></div>
 <div class="card dice">
-<button class="die" id="d0" disabled><span></span></button><button class="die" id="d1" disabled><span></span></button>
+<button class="die" id="d0" disabled><span data-v="1"></span></button><button class="die" id="d1" disabled><span data-v="1"></span></button>
 <button id="roll" disabled>Бросить кости</button><button id="sum" disabled>Ход суммой не используется</button>
 </div>
-<div class="card direction"><b>Направление игры</b><div class="clockwise">↻ По часовой стрелке</div><div id="turnOrder" class="turnOrder">Красный → Чёрный → Синий → Бело-синий</div></div><div class="card"><b>Как ходить</b><p>После броска выберите кость. Зелёным подсветятся фишки, которыми можно сходить. Нажмите фишку — голубым увидите весь путь, жёлтым конечную клетку. Нажмите фишку ещё раз для хода.</p></div>
+<div class="card direction"><b>Направление игры</b><div class="clockwise">↻ По часовой стрелке</div><div id="turnOrder" class="turnOrder">Красный → Чёрный → Синий → Бело-синий</div></div><div class="card"><b>Как ходить</b><p>Обычно сначала играется большая кость, затем меньшая. Внутри ловушки порядок свободный. Куш (дубль) позволяет сбить фишку в углу. После полного круга фишка сразу поворачивает на внутреннюю дорожку Домика и идёт по ней клетками.</p></div>
 <div class="card penaltyCard">
       <b>Желание проигравшему</b>
       <div id="penaltyText" class="penaltyText">Определится колесом фортуны перед игрой</div>
@@ -159,7 +174,8 @@
         </div>
       </div>
     </div>
-<script src="game.js"></script>
+<script src="i18n.js"></script>
+  <script src="game.js"></script>
 <script src="online-config.js"></script>
 <script src="online.js"></script>
 </body></html>

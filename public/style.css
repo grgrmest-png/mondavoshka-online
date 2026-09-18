@@ -345,3 +345,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:15px}.boardbox{a
 @media(max-width:520px){
   .roomCodeBox{grid-template-columns:1fr}.roomCodeBox button{width:100%}
 }
+
+/* V28 — пленные сохраняют свой цвет, кубики никогда не пустые */
+.piece.captive{opacity:1}
+.die:disabled span{opacity:1}
