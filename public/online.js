@@ -4,7 +4,7 @@
   {name:"Красный",fill:"#df2735"},{name:"Чёрный",fill:"#171717"},
   {name:"Синий",fill:"#008fa5"},{name:"Бело-синий",fill:"#f8f7ef"}
  ];
- const S={socket:null,active:false,connected:false,started:false,code:null,token:null,seat:null,host:false,players:[],name:"",actionSeat:null,pendingStart:false,reconnectTimer:null,manualClose:false,lastVersion:0,randomSearching:false,randomSize:2,matchMode:"room",deadline:0,misses:[],matchPoints:[]};
+ const S={socket:null,active:false,connected:false,started:false,code:null,token:null,seat:null,host:false,players:[],name:"",actionSeat:null,pendingStart:false,reconnectTimer:null,manualClose:false,lastVersion:0,randomSearching:false,randomSize:2,matchMode:"room",deadline:0,misses:[],matchPoints:[],fillBots:false,autoSeat:null,autoControllerSeat:null};
 
  function wsUrl(){
    const configured=String(window.MONDAVOSHKA_WS_URL||"").trim();
@@ -21,7 +21,7 @@
    return {profileId:p.id||null,skinId:p.skinId||"default",rating:Number(p.rating)||0};
  }
  function playerTextBySeat(seat){
-   const p=S.players.find(x=>x.seat===seat);const color=colors[seat]?.name||"Игрок";
+   const p=S.players.find(x=>x.seat===seat);const color=p?.color||g?.players?.[seat]?.name||colors[seat]?.name||"Игрок";
    return p?`${p.name} — ${color}`:color;
  }
  function setConnection(text,ok=null){
@@ -72,15 +72,18 @@
      S.players.slice().sort((a,b)=>a.seat-b.seat).forEach(p=>{
        const d=document.createElement("div");d.className="lobbyPlayer"+(p.connected?"":" offline");
        const dot=document.createElement("span");dot.className="lobbyDot";dot.style.background=colors[p.seat]?.fill||"#999";
-       const text=document.createElement("span");text.textContent=`${p.name} — ${colors[p.seat]?.name||"Игрок"}${p.host?" • создатель":""}${p.connected?"":" • не в сети"}`;
+       const text=document.createElement("span");text.textContent=`${p.name} — ${p.color||colors[p.seat]?.name||"Игрок"}${p.bot?" • компьютер":""}${p.host?" • создатель":""}${p.connected?"":" • не в сети"}`;
        d.append(dot,text);
        if(p.seat===S.seat){const you=document.createElement("span");you.className="you";you.textContent="это вы";d.appendChild(you)}
        box.appendChild(d);
      });
    }
    const btn=document.querySelector("#startOnlineGame");
-   const connectedCount=S.players.filter(p=>p.connected).length;
+   const connectedCount=S.players.filter(p=>p.connected&&!p.bot).length;
    if(btn){btn.style.display=S.host?"":"none";btn.disabled=!S.host||connectedCount<2||S.started}
+   const fillWrap=document.querySelector("#fillOnlineBotsWrap"),fill=document.querySelector("#fillOnlineBots");
+   if(fillWrap)fillWrap.hidden=!(S.host&&!S.started&&(connectedCount===2||connectedCount===3));
+   if(fill&&connectedCount>=4){fill.checked=false;S.fillBots=false}
    const hint=document.querySelector("#lobbyHint");
    if(hint){
      if(S.started)hint.textContent="Партия уже началась.";
@@ -91,8 +94,28 @@
    }
    setConnection(S.connected?"Связь с сервером установлена":"Нет связи с сервером",S.connected);
  }
+ function controlsSeat(seat){
+   if(S.seat===seat)return true;
+   if(S.autoSeat===seat && S.autoControllerSeat===S.seat)return true;
+   return !!(S.host&&g?.botSeats?.includes(seat));
+ }
  function canAct(){
-   return !!(S.active&&S.started&&g&&S.seat===g.turn&&S.connected&&!g.gameOver&&!g.players?.[S.seat]?.eliminated);
+   return !!(S.active&&S.started&&g&&controlsSeat(g.turn)&&S.connected&&!g.gameOver&&!g.players?.[g.turn]?.eliminated);
+ }
+ function isBotController(){
+   if(S.autoSeat===g?.turn && S.autoControllerSeat===S.seat)return true;
+   return !!(S.active&&S.started&&S.host&&g?.botSeats?.includes(g?.turn));
+ }
+ function applyAutoControl(m){
+   if(Object.prototype.hasOwnProperty.call(m,"autoSeat"))S.autoSeat=Number.isInteger(m.autoSeat)?m.autoSeat:null;
+   if(Object.prototype.hasOwnProperty.call(m,"autoControllerSeat"))S.autoControllerSeat=Number.isInteger(m.autoControllerSeat)?m.autoControllerSeat:null;
+   if(g)g.autoBotSeat=S.autoSeat;
+ }
+ function maybeContinueAutoTurn(){
+   if(!g || S.autoSeat!==g.turn || S.autoControllerSeat!==S.seat)return;
+   g.autoBotSeat=S.autoSeat;
+   if(g.rolled)scheduleBotMove(380);
+   else scheduleBotRoll(420);
  }
  function renderTurnTimer(){
    const card=document.querySelector("#turnTimerCard"),score=document.querySelector("#matchScoreCard");
@@ -103,12 +126,12 @@
    if(timer)timer.textContent=String(sec);
    if(bar)bar.style.width=`${Math.max(0,Math.min(100,left/25000*100))}%`;
    const myMiss=S.seat==null?0:(S.misses[S.seat]||0);
-   if(miss)miss.textContent=`Ваши пропуски: ${myMiss} / 3`;
+   if(miss)miss.textContent=`Просрочки хода: ${myMiss} / 3`;
    const mp=document.querySelector("#matchPoints");if(mp)mp.textContent=String(S.matchPoints[S.seat]||0);
  }
  setInterval(renderTurnTimer,250);
  function applyTimer(m){
-   if(m.deadline)S.deadline=Number(m.deadline)||0;
+   if(Object.prototype.hasOwnProperty.call(m,"deadline"))S.deadline=Number(m.deadline)||0;
    if(Array.isArray(m.misses))S.misses=m.misses;
    if(Array.isArray(m.matchPoints))S.matchPoints=m.matchPoints;
    renderTurnTimer();
@@ -116,8 +139,9 @@
  function refreshControls(){
    if(!S.active||!g)return;
    const mine=canAct();
+   const botTurn=!!g?.botSeats?.includes(g.turn);
    const roll=document.querySelector("#roll");
-   if(roll)roll.disabled=!(mine&&!g.rolled&&!animating);
+   if(roll)roll.disabled=!(mine&&!botTurn&&!g.rolled&&!animating);
    if(!mine)dice.forEach(b=>b.disabled=true);
    if(!mine&&S.started&&g){
      const current=g.players[g.turn];
@@ -126,10 +150,10 @@
  }
  function syncState(){
    if(!S.active||!S.started||!S.connected||!g)return;
-   if(S.actionSeat!==S.seat)return;
+   if(S.actionSeat!=null&&!controlsSeat(S.actionSeat))return;
    send({type:"state_update",code:S.code,state:JSON.parse(JSON.stringify(g)),status:document.querySelector("#status")?.textContent||""});
  }
- function afterNetworkRollApplied(){refreshControls();if(S.actionSeat===S.seat)setTimeout(syncState,30)}
+ function afterNetworkRollApplied(){refreshControls();if(S.actionSeat!=null&&controlsSeat(S.actionSeat))setTimeout(syncState,30)}
  function requestRoll(){
    if(!canAct()){refreshControls();return}
    const roll=document.querySelector("#roll");if(roll)roll.disabled=true;
@@ -183,11 +207,12 @@
    if(showMenu){closeGameMenus();document.querySelector("#mainMenu")?.classList.add("show")}
  }
  function startGame(wish){
-   if(!S.host||S.players.filter(p=>p.connected).length<2)return;
-   const n=S.players.length;
+   const realPlayers=S.players.filter(p=>p.connected&&!p.bot);
+   if(!S.host||realPlayers.length<2)return;
+   S.fillBots=!!document.querySelector("#fillOnlineBots")?.checked && realPlayers.length<4;
+   const n=S.fillBots?4:realPlayers.length;
    const state=buildGameState(n,wish);
-   state.players.forEach((pl,i)=>{const rp=S.players.find(p=>p.seat===i);pl.playerName=rp?.name||pl.name;pl.skinId=rp?.skinId||"default";pl.profileId=rp?.profileId||null;pl.eliminated=!!rp?.eliminated});
-   send({type:"start_game",code:S.code,wish,state});
+   send({type:"start_game",code:S.code,wish,state,fillBots:S.fillBots});
    S.pendingStart=false;
  }
  function acceptRoomMessage(m,mode){
@@ -214,10 +239,12 @@
    if(m.type==="random_matched"){acceptRoomMessage(m,"random");return}
    if(m.type==="room_created"||m.type==="room_joined"||m.type==="room_reconnected"){acceptRoomMessage(m,"room");return}
    if(m.type==="seat_update"){S.seat=m.seat;S.host=!!m.host;S.players=m.players||S.players;renderLobby();return}
-   if(m.type==="room_update"){S.players=m.players||S.players;S.host=!!S.players.find(p=>p.seat===S.seat)?.host;S.started=!!m.started;renderLobby();return}
+   if(m.type==="room_update"){S.players=m.players||S.players;S.host=!!S.players.find(p=>p.seat===S.seat)?.host;S.started=!!m.started;applyTimer(m);applyAutoControl(m);renderLobby();return}
    if(m.type==="game_started"){
      S.started=true;S.actionSeat=null;S.pendingStart=false;S.lastVersion=m.version||S.lastVersion;
-     startOnlineGameState(m.state,m.status||"Онлайн-партия началась. Красный ходит первым.");applyTimer(m);refreshControls();return;
+     if(Number.isInteger(m.seat))S.seat=m.seat;
+     if(Array.isArray(m.players))S.players=m.players;
+     startOnlineGameState(m.state,m.status||"Жребий цветов проведён. Начинается партия.");applyTimer(m);applyAutoControl(m);refreshControls();maybeContinueAutoTurn();return;
    }
    if(m.type==="roll_result"){
      if((m.version||0)<S.lastVersion)return;
@@ -226,15 +253,25 @@
    if(m.type==="state_sync"){
      if((m.version||0)<S.lastVersion)return;
      S.lastVersion=m.version||S.lastVersion;if(m.state)applyOnlineSnapshot(m.state,m.status||"");
-     S.actionSeat=m.actionSeat??null;applyTimer(m);refreshControls();return;
+     S.actionSeat=m.actionSeat??null;applyTimer(m);applyAutoControl(m);refreshControls();maybeContinueAutoTurn();return;
    }
-   if(m.type==="turn_timer"){applyTimer(m);return}
+   if(m.type==="turn_timer"){applyTimer(m);applyAutoControl(m);refreshControls();if(g?.botSeats?.includes(g.turn)&&isBotController())scheduleBotRoll(650);maybeContinueAutoTurn();return}
+   if(m.type==="timeout_autoplay"){
+     if((m.version||0)<S.lastVersion)return;
+     S.lastVersion=m.version||S.lastVersion;
+     S.actionSeat=m.seat;
+     if(m.state)applyOnlineSnapshot(m.state,m.status||"Время истекло — система делает ход.");
+     applyTimer(m);applyAutoControl(m);refreshControls();
+     if(Array.isArray(m.dice))applyRollValues(m.dice,true);
+     else maybeContinueAutoTurn();
+     return;
+   }
    if(m.type==="turn_timeout"){
      if(m.state)applyOnlineSnapshot(m.state,m.status||"Время хода истекло.");
-     applyTimer(m);S.actionSeat=null;refreshControls();return;
+     applyTimer(m);applyAutoControl(m);S.actionSeat=null;refreshControls();if(g?.botSeats?.includes(g.turn)&&isBotController())scheduleBotRoll(650);maybeContinueAutoTurn();return;
    }
    if(m.type==="rating_award"){
-     if(m.profile)window.MondavoshkaProfile?.awardFromServer?.(m.profile,m.delta,m.matchPoints);
+     if(m.profile)window.MondavoshkaProfile?.awardFromServer?.(m.profile,m.delta,m.matchPoints,m.reason||"");
      if(Array.isArray(m.matchPoints))S.matchPoints=m.matchPoints;
      renderTurnTimer();return;
    }
@@ -244,9 +281,11 @@
    }
    if(m.type==="match_over"){
      if(m.state)applyOnlineSnapshot(m.state,m.status||"Партия завершена.");
+     S.autoSeat=null;S.autoControllerSeat=null;if(g)g.autoBotSeat=null;
      applyTimer(m);S.actionSeat=null;
      const roll=document.querySelector("#roll");if(roll)roll.disabled=true;
      window.MondavoshkaProfile?.loadLeaderboard?.();
+     if(Number.isInteger(m.winnerSeat))setTimeout(()=>window.MondavoshkaVictory?.show?.(m.winnerSeat,m.status||""),250);
      return;
    }
    if(m.type==="player_left"){
@@ -262,7 +301,7 @@
  document.querySelector("#findRandomBtn").onclick=findRandom;
  document.querySelector("#cancelRandomBtn").onclick=()=>cancelRandom(false);
  document.querySelector("#roomCode").addEventListener("input",e=>e.target.value=normalizeCode(e.target.value));
- document.querySelector("#startOnlineGame").onclick=()=>{if(S.host){S.pendingStart=true;openOnlineWheel(S.players.length)}};
+ document.querySelector("#startOnlineGame").onclick=()=>{if(S.host){const real=S.players.filter(p=>p.connected&&!p.bot).length;S.fillBots=!!document.querySelector("#fillOnlineBots")?.checked&&real<4;S.pendingStart=true;openOnlineWheel(S.fillBots?4:real)}};
  document.querySelector("#leaveOnlineRoom").onclick=()=>leave(true);
  document.querySelector("#copyRoomCode").onclick=async()=>{try{await navigator.clipboard.writeText(S.code||"");document.querySelector("#copyRoomCode").textContent="Скопировано";setTimeout(()=>document.querySelector("#copyRoomCode").textContent="Копировать код",1200)}catch{}};
 
@@ -272,6 +311,6 @@
 
  window.MondavoshkaOnline={
    get active(){return S.active},get connected(){return S.connected},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
-   canAct,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,wsUrl,playerTextBySeat
+   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,wsUrl,playerTextBySeat
  };
 })();

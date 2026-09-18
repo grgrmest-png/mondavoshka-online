@@ -422,3 +422,21 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:15px}.boardbox{a
   border:2px solid #70431c;
   font-weight:800;
 }
+
+/* V34 */
+.fillBotsOffer{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:13px 0;padding:12px;border:2px solid #a8753c;border-radius:10px;background:#f4d8a7;font-weight:800}.fillBotsOffer input{width:20px;height:20px}.fillBotsOffer small{width:100%;font-weight:600;opacity:.75}
+.victoryModal{overflow:hidden}.victoryModal.show{display:flex}.victoryModal #victoryCanvas{position:absolute;inset:0;width:100%;height:100%;z-index:0;background:radial-gradient(circle at center,#3d2414dd,#120b07f2)}.victoryDialog{position:relative;z-index:2;text-align:center;max-width:560px;background:#f7d9a4;border:4px solid #9b622f}.victoryCup{font-size:76px;line-height:1}.victoryDialog h2{font-size:38px;margin:8px 0}.victoryDialog p{font-size:19px;font-weight:800}.victoryActions{justify-content:center}.victoryActions button{min-width:180px}
+
+/* V36 — бонус за три куша подряд */
+.tripleKushCard{
+  border:3px solid #b66b18;
+  background:linear-gradient(180deg,#ffe39a,#efb457);
+  text-align:center;
+  animation:kushPulse 1s ease-in-out infinite alternate;
+}
+.tripleKushCard b{display:block;font-size:18px;margin-bottom:5px}
+.tripleKushCard span{display:block;font-size:12px;line-height:1.35;font-weight:700}
+@keyframes kushPulse{
+  from{box-shadow:0 0 0 rgba(197,111,22,0)}
+  to{box-shadow:0 0 18px rgba(197,111,22,.48)}
+}

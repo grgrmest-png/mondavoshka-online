@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Мондавошка V33 — звуки и плавные переходы</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Мондавошка V36 — бонус за три куша</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -63,6 +63,10 @@
 <section class="boardbox"><svg id="board" viewBox="0 0 1000 1000"></svg></section>
 <aside>
 <div class="card turnCard"><small>Сейчас ходит</small><div id="player" class="player">—</div><div id="youAre" class="youAre" hidden></div><div id="status">Начните игру</div></div>
+<div class="card tripleKushCard" id="tripleKushCard" hidden>
+  <b>🔥 3 КУША ПОДРЯД!</b>
+  <span id="tripleKushText">Выберите фишку — она сразу отправится в Домик.</span>
+</div>
 <div class="card turnTimerCard" id="turnTimerCard" hidden>
   <div class="turnTimerTop"><b>Время хода</b><span><strong id="turnTimer">25</strong> сек</span></div>
   <div class="timerBar"><i id="turnTimerBar"></i></div>
@@ -140,7 +144,11 @@
         <label>Количество игроков
           <select id="count"><option>2</option><option>3</option><option selected>4</option></select>
         </label>
-        <p>Красный • чёрный • синий • бело-синий</p>
+        <p>2 игрока: Красный + Синий (напротив друг друга). 3 игрока: Красный + Чёрный + Синий.</p>
+        <label id="fillLocalBotsWrap" class="fillBotsOffer">
+          <input id="fillLocalBots" type="checkbox"> Заполнить свободные места компьютерами до 4 игроков
+          <small>Если не отмечать — играете только своим составом.</small>
+        </label>
         <div class="dialogActions">
           <button class="backToMenu" type="button">← Назад</button>
           <button id="start" type="button">Далее — колесо фортуны</button>
@@ -153,7 +161,7 @@
         <h2>Игра с компьютером</h2>
         <label>Количество соперников
           <select id="botCount">
-            <option value="1" selected>1 компьютер — Красный против Чёрного</option>
+            <option value="1" selected>1 компьютер — 2 участника (Красный + Синий)</option>
             <option value="2">2 компьютера — Красный, Чёрный, Синий</option>
             <option value="3">3 компьютера — все четыре цвета</option>
           </select>
@@ -234,6 +242,10 @@
         <div class="lobbyTitle">Игроки</div>
         <div id="lobbyPlayers" class="lobbyPlayers"></div>
         <div id="lobbyHint" class="onlineHint">Ожидание игроков…</div>
+        <label id="fillOnlineBotsWrap" class="fillBotsOffer" hidden>
+          <input id="fillOnlineBots" type="checkbox"> Заполнить свободные места компьютерами до 4 игроков
+          <small>Для 2–3 реальных игроков. Если не отмечать — играете только людьми.</small>
+        </label>
         <div class="dialogActions">
           <button id="leaveOnlineRoom" type="button">← Выйти</button>
           <button id="startOnlineGame" type="button" disabled>Колесо фортуны и начать</button>
@@ -261,6 +273,19 @@
         <div class="wheelButtons">
           <button id="spinWheel" type="button">Крутить колесо</button>
           <button id="beginGame" type="button" disabled>Начать игру</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal victoryModal" id="victoryModal">
+      <canvas id="victoryCanvas" aria-hidden="true"></canvas>
+      <div class="dialog victoryDialog">
+        <div class="victoryCup">🏆</div>
+        <h2 id="victoryTitle">Победа!</h2>
+        <p id="victorySubtitle"></p>
+        <div class="dialogActions victoryActions">
+          <button id="victoryMenu" type="button">Главное меню</button>
+          <button id="victoryAgain" type="button">Начать новую игру</button>
         </div>
       </div>
     </div>

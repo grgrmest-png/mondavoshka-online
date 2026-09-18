@@ -263,11 +263,14 @@
  }
  function openModal(id){document.querySelectorAll(".modal").forEach(x=>x.classList.remove("show"));document.querySelector(id)?.classList.add("show")}
  function closeToMenu(){document.querySelectorAll(".modal").forEach(x=>x.classList.remove("show"));document.querySelector("#mainMenu")?.classList.add("show");loadLeaderboard()}
- function awardFromServer(profile,delta,matchPoints){
+ function awardFromServer(profile,delta,matchPoints,reason=""){
    applyServerProfile(profile);
    const el=document.querySelector("#matchPoints");if(el)el.textContent=String(matchPoints||0);
    const toast=document.querySelector("#ratingToast");
-   if(toast&&delta){toast.textContent=`+${delta} очков за фишку в Домике`;toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),1800)}
+   if(toast&&delta){
+     toast.textContent=reason || `+${delta} очков за фишку в Домике`;
+     toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),2200)
+   }
    loadLeaderboard();
  }
 

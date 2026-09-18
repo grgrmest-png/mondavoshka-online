@@ -57,8 +57,11 @@ const dice=[$("#d0"),$("#d1")];
 let gameMode="local";
 let botTimer=null;
 let botThinking=false;
-function isBotSeat(seat=g?.turn){return gameMode==="bot" && !!g?.botSeats?.includes(seat)}
+function isBotSeat(seat=g?.turn){
+ return !!g && (!!g.botSeats?.includes(seat) || g.autoBotSeat===seat);
+}
 function isBotTurn(){return !!g && isBotSeat(g.turn)}
+function canControlBot(){return !onlineActive() || !!window.MondavoshkaOnline?.isBotController?.()}
 function cancelBotTimer(){
   if(botTimer){clearTimeout(botTimer);botTimer=null;}
   botThinking=false;
@@ -101,6 +104,13 @@ const WISHES=[
 let pendingPlayerCount=4;
 let selectedWish=null;
 let wheelRotation=0;
+let pendingLocalFillBots=false;
+let pendingLocalHumanCount=4;
+function shuffled(arr){
+ const a=[...arr];
+ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}
+ return a;
+}
 
 // Оригинальная процедурная средневековая музыка — без внешних аудиофайлов.
 let audioCtx=null;
@@ -212,12 +222,13 @@ function drawBoard(){
 }function player(){return g.players[g.turn]}
 function playerLabel(pl){
  if(!pl)return "Игрок";
- if(gameMode==="online"&&pl.playerName)return `${pl.playerName} — ${pl.name}`;
+ if(pl.playerName)return `${pl.playerName} — ${pl.name}`;
  return pl.name;
 }
 function buildGameState(n,wish=selectedWish){
+ const colorSet=n===2?[C[0],C[2]]:n===3?[C[0],C[1],C[2]]:C.slice(0,4);
  return {
-   players:C.slice(0,n).map((c,owner)=>({...c,owner,skinId:"default",profileId:null,eliminated:false,pieces:Array.from({length:5},(_,i)=>({
+   players:colorSet.map((c,owner)=>({...c,owner,skinId:"default",profileId:null,eliminated:false,pieces:Array.from({length:5},(_,i)=>({
      id:c.id+i,owner,n:i,state:"yard",track:null,progress:0,homeIndex:null,
      trap:0,trapSide:null,captorSide:null
    }))})),
@@ -226,6 +237,13 @@ function buildGameState(n,wish=selectedWish){
    forcedSix:false,
    resumeStack:[],
    pendingGiftSeat:null,
+
+   // Три куша подряд: отдельный счётчик для текущего игрока.
+   // Переданная за пленника шестёрка сюда не относится.
+   doubleStreak:0,
+   doubleStreakSeat:null,
+   tripleKushPending:false,
+
    forfeit:wish
  };
 }
@@ -244,29 +262,39 @@ function activateGameState(state,mode="local",statusText="Бросьте две 
  updatePenaltyCard();
  startMusic();
  if(onlineActive()) window.MondavoshkaOnline.refreshControls();
- else $("#roll").disabled=false;
+ else $("#roll").disabled=isBotTurn();
+ if(isBotTurn()&&canControlBot())scheduleBotRoll(850);
 }
-function newGame(n,wish=selectedWish){
+function buildLocalMixedState(humanCount=4,fillBots=false,wish=selectedWish){
+ const humans=Math.max(2,Math.min(4,Number(humanCount)||4));
+ const total=fillBots&&humans<4?4:humans;
+ const state=buildGameState(total,wish);
+ const identities=[];
+ for(let i=0;i<humans;i++)identities.push({name:`Игрок ${i+1}`,bot:false,skinId:i===0?(window.MondavoshkaProfile?.equippedSkin||"default"):"default"});
+ for(let i=humans;i<total;i++)identities.push({name:`Компьютер ${i-humans+1}`,bot:true,skinId:"default"});
+ const draw=shuffled(identities);
+ state.botSeats=[];
+ state.players.forEach((pl,seat)=>{const id=draw[seat];pl.playerName=id.name;pl.bot=id.bot;pl.skinId=id.skinId;if(id.bot)state.botSeats.push(seat)});
+ return state;
+}
+function newGame(n,wish=selectedWish,fillBots=false){
  cancelBotTimer();
- const state=buildGameState(n,wish);
- if(state.players[0])state.players[0].skinId=window.MondavoshkaProfile?.equippedSkin||"default";
- activateGameState(state,"local","Бросьте две кости.");
+ const state=buildLocalMixedState(n,fillBots,wish);
+ activateGameState(state,state.botSeats.length?"mixed":"local",`Жребий цветов проведён. Первым ходит ${playerLabel(state.players[0])}.`);
 }
-
 function buildBotGameState(botCount=1){
  const count=Math.max(1,Math.min(3,Number(botCount)||1));
  const state=buildGameState(count+1,null);
- if(state.players[0])state.players[0].skinId=window.MondavoshkaProfile?.equippedSkin||"default";
- state.botSeats=Array.from({length:count},(_,i)=>i+1);
- state.players.forEach((pl,i)=>pl.bot=state.botSeats.includes(i));
+ const identities=[{name:"Вы",bot:false,skinId:window.MondavoshkaProfile?.equippedSkin||"default"}];
+ for(let i=0;i<count;i++)identities.push({name:`Компьютер ${i+1}`,bot:true,skinId:"default"});
+ const draw=shuffled(identities);state.botSeats=[];
+ state.players.forEach((pl,seat)=>{const id=draw[seat];pl.playerName=id.name;pl.bot=id.bot;pl.skinId=id.skinId;if(id.bot)state.botSeats.push(seat)});
  return state;
 }
-
 function startBotGame(botCount=1){
- cancelBotTimer();
- selectedWish=null;
+ cancelBotTimer();selectedWish=null;
  const state=buildBotGameState(botCount);
- activateGameState(state,"bot","Ваш ход. Бросьте две кости.");
+ activateGameState(state,"bot",`Жребий цветов проведён. Первым ходит ${playerLabel(state.players[0])}.`);
  updatePenaltyCard();
 }
 function startOnlineGameState(state,statusText="Онлайн-партия началась."){
@@ -317,6 +345,7 @@ function prisonSlotIndex(pc){
 }
 function renderPieces(){
  if(!g)return;
+ updateTripleKushCard();
  svg.querySelectorAll(".piece,.route,.shards").forEach(e=>e.remove());
  if(preview){
    const coords=preview.routeCoords||[];
@@ -328,7 +357,9 @@ function renderPieces(){
    if(preview.dest!=null)svg.querySelector(`[data-cell="${preview.dest}"]`)?.classList.add("dest");
    if(preview.jumpTo!=null)svg.querySelector(`[data-cell="${preview.jumpTo}"]`)?.classList.add("jumpdest");
  }
- let legalIds=new Set(currentLegal().map(x=>x.id));
+ let legalIds=g?.tripleKushPending
+   ? new Set(tripleKushEligible(g.turn).map(x=>x.id))
+   : new Set(currentLegal().map(x=>x.id));
  const drawOrder = allPieces().slice().sort((a,b)=>{
    const sa = a.state==="captured" ? 1 : 0;
    const sb = b.state==="captured" ? 1 : 0;
@@ -418,6 +449,7 @@ function applyRollValues(r,fromNetwork=false){
    g.double=g.d[0]===g.d[1];
    g.sum=false;
    g.selected=null;
+   registerDoubleStreak();
    dice.forEach((b,i)=>{
      b.classList.remove("rolling");
      b.querySelector("span").dataset.v=g.d[i];
@@ -431,6 +463,19 @@ function applyRollValues(r,fromNetwork=false){
 }
 function beginOrderedDice(){
  if(!g||!g.rolled)return;
+
+ if(g.tripleKushPending){
+   dice.forEach(b=>b.disabled=true);
+   g.selected=null;
+   g.trapOnlySelection=false;
+   preview=null;
+   resetCellClasses();
+   renderPieces();
+   setStatus("🔥 ТРИ КУША ПОДРЯД! Выберите зелёную фишку из базы или с поля и отправьте её прямо в Домик. Пятую фишку этим бонусом поставить нельзя.");
+   if(isBotTurn()&&canControlBot())scheduleTripleKushBonus();
+   return;
+ }
+
  g.trapOnlySelection=false;
 
  const unused=[0,1].filter(i=>!g.used[i]);
@@ -583,7 +628,9 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
 
  // Пленную фишку шестёрка выкупает. Сама шестёрка затем передаётся тому игроку, у кого был пленник.
  if(pc.state==="captured"){
-   if(trapOnly||sourceSum||steps!==6) return null;
+   // Шестёрка, переданная за выкуп пленника, НЕ может выкупать другого пленника.
+   // Ею можно вывести фишку из базы, выйти из ловушки или сделать обычный ход.
+   if(g.forcedSix||trapOnly||sourceSum||steps!==6) return null;
    return {id:pc.id,rescue:true,path:[],routeCoords:[],dest:null};
  }
 
@@ -689,8 +736,154 @@ function currentLegal(){
  return player().pieces.map(p=>legal(p,s,false,!!g.trapOnlySelection)).filter(Boolean);
 }
 
+function tripleKushHomeCount(owner=g?.turn){
+ if(!g?.players?.[owner])return 0;
+ return g.players[owner].pieces.filter(p=>p.state==="home").length;
+}
+function tripleKushEligible(owner=g?.turn){
+ if(!g?.players?.[owner])return[];
+ // Бонусом нельзя поставить последнюю, пятую фишку.
+ if(tripleKushHomeCount(owner)>=4)return[];
+ return g.players[owner].pieces.filter(p=>["yard","track","trap"].includes(p.state));
+}
+function tripleKushHomeSlot(owner=g?.turn){
+ // Мгновенно завершённую фишку ставим в самую глубокую свободную клетку
+ // Домика, чтобы она не перекрывала вход остальным.
+ for(let i=4;i>=0;i--)if(!homeOcc(owner,i))return i;
+ return null;
+}
+function updateTripleKushCard(){
+ const card=$("#tripleKushCard"),text=$("#tripleKushText");
+ if(!card)return;
+ const pending=!!g?.tripleKushPending;
+ card.hidden=!pending;
+ if(text&&pending){
+   text.textContent="Три куша подряд! Выберите зелёную фишку из базы или с поля — она сразу отправится в Домик. Пятую фишку этим бонусом ставить нельзя.";
+ }
+}
+function registerDoubleStreak(){
+ if(!g||g.forcedSix)return false;
+
+ if(!g.double){
+   g.doubleStreak=0;
+   g.doubleStreakSeat=null;
+   g.tripleKushPending=false;
+   updateTripleKushCard();
+   return false;
+ }
+
+ if(g.doubleStreakSeat===g.turn)g.doubleStreak=(Number(g.doubleStreak)||0)+1;
+ else{
+   g.doubleStreakSeat=g.turn;
+   g.doubleStreak=1;
+ }
+
+ if(g.doubleStreak<3)return false;
+
+ // Тройка кушей отработала. Следующая серия начинается заново.
+ g.doubleStreak=0;
+ g.doubleStreakSeat=null;
+
+ const eligible=tripleKushEligible(g.turn);
+ if(!eligible.length){
+   g.tripleKushPending=false;
+   updateTripleKushCard();
+   if(tripleKushHomeCount(g.turn)>=4){
+     setStatus("Три куша подряд! Но бонус нельзя использовать для пятой, последней фишки. Продолжаем обычный ход.");
+   }else{
+     setStatus("Три куша подряд! Но сейчас нет фишки в базе или на поле, которую можно отправить в Домик.");
+   }
+   return false;
+ }
+
+ g.tripleKushPending=true;
+ updateTripleKushCard();
+ return true;
+}
+async function claimTripleKushBonus(pc){
+ if(!g?.tripleKushPending||pc.owner!==g.turn)return false;
+ if(!tripleKushEligible(g.turn).some(x=>x.id===pc.id))return false;
+
+ const slot=tripleKushHomeSlot(g.turn);
+ if(slot==null)return false;
+
+ const pl=g.players[pc.owner];
+ animating=true;
+ preview=null;
+ resetCellClasses();
+
+ const target=HOME[pl.id][slot];
+ // Плавное перемещение в Домик из базы, внешней дороги или ловушки.
+ await animate(pc,[target],620,"fly");
+
+ pc.state="home";
+ pc.homeIndex=slot;
+ pc.track=null;
+ pc.progress=TRACK.length;
+ pc.trap=0;
+ pc.trapSide=null;
+ pc.captorSide=null;
+
+ g.tripleKushPending=false;
+ updateTripleKushCard();
+ renderPieces();
+ animating=false;
+
+ setStatus(`${playerLabel(pl)} использовал бонус за три куша подряд: выбранная фишка сразу в Домике. Теперь разыграйте выпавший куш.`);
+ beginOrderedDice();
+
+ if(onlineActive())window.MondavoshkaOnline?.syncState();
+ return true;
+}
+function tripleKushBotChoice(){
+ const list=tripleKushEligible(g?.turn);
+ if(!list.length)return null;
+ // Компьютер прежде всего спасает фишку из ловушки, затем берёт фишку из базы,
+ // затем — наименее продвинутую фишку с поля.
+ return list.slice().sort((a,b)=>{
+   const rank=p=>p.state==="trap"?300:p.state==="yard"?200:100-(Number(p.progress)||0);
+   return rank(b)-rank(a);
+ })[0];
+}
+function scheduleTripleKushBonus(delay=420){
+ if(!g?.tripleKushPending||!isBotTurn()||!canControlBot())return;
+ if(botTimer)clearTimeout(botTimer);
+ botTimer=setTimeout(async()=>{
+   botTimer=null;
+   if(!g?.tripleKushPending||!isBotTurn()||animating)return;
+   const pc=tripleKushBotChoice();
+   if(!pc){
+     g.tripleKushPending=false;
+     updateTripleKushCard();
+     beginOrderedDice();
+     return;
+   }
+   setStatus(`${g.autoBotSeat===g.turn?"Система":"Компьютер"} использует бонус за три куша подряд…`);
+   await claimTripleKushBonus(pc);
+ },delay);
+}
+
 async function pieceClick(pc){
  if(animating||pc.owner!==g.turn)return;
+
+ if(g?.tripleKushPending){
+   if(isBotTurn()){
+     setStatus("Система выбирает фишку для бонуса за три куша подряд…");
+     return;
+   }
+   if(onlineActive()&&!onlineCanAct()){
+     setStatus(`Сейчас ходит ${playerLabel(player())}. Ожидайте своей очереди.`);
+     window.MondavoshkaOnline.refreshControls();
+     return;
+   }
+   if(!tripleKushEligible(g.turn).some(x=>x.id===pc.id)){
+     setStatus("Для бонуса выберите зелёную фишку из своей базы или с игрового поля.");
+     return;
+   }
+   await claimTripleKushBonus(pc);
+   return;
+ }
+
  if(isBotTurn()){
    setStatus(`Компьютер (${player().name}) думает…`);
    return;
@@ -951,7 +1144,11 @@ function chooseBotDieAndMove(){
 }
 
 function scheduleBotMove(delay=620){
- if(!isBotTurn()||!g?.rolled||botThinking)return;
+ if(g?.tripleKushPending){
+   scheduleTripleKushBonus(Math.min(delay,420));
+   return;
+ }
+ if(!isBotTurn()||!g?.rolled||botThinking||!canControlBot())return;
  if(botTimer)clearTimeout(botTimer);
  botTimer=setTimeout(async()=>{
    botTimer=null;
@@ -976,7 +1173,7 @@ function scheduleBotMove(delay=620){
    }
 
    botThinking=true;
-   setStatus(`Компьютер (${player().name}) ходит на ${stepsNow()}…`);
+   setStatus(g.autoBotSeat===g.turn ? `Система делает ход за ${playerLabel(player())}: ${stepsNow()}…` : `Компьютер (${player().name}) ходит на ${stepsNow()}…`);
    await new Promise(r=>setTimeout(r,420));
 
    if(!isBotTurn()||g.selected==null){
@@ -993,19 +1190,20 @@ function scheduleBotMove(delay=620){
    await execute(choice.pc,current);
    botThinking=false;
    consume();
+   if(onlineActive())window.MondavoshkaOnline?.syncState();
  },delay);
 }
 
 function scheduleBotRoll(delay=720){
- if(!isBotTurn()||!g||g.rolled||animating)return;
+ if(!isBotTurn()||!g||g.rolled||animating||!canControlBot())return;
  if(botTimer)clearTimeout(botTimer);
  botTimer=setTimeout(()=>{
    botTimer=null;
    if(!isBotTurn()||!g||g.rolled||animating)return;
    $("#roll").disabled=true;
-   setStatus(`Компьютер (${player().name}) бросает кости…`);
-   const r=[1+Math.floor(Math.random()*6),1+Math.floor(Math.random()*6)];
-   applyRollValues(r,false);
+   setStatus(g.autoBotSeat===g.turn ? `Время истекло — система бросает кости за ${playerLabel(player())}…` : `Компьютер (${player().name}) бросает кости…`);
+   if(onlineActive())window.MondavoshkaOnline?.requestRoll();
+   else{const r=[1+Math.floor(Math.random()*6),1+Math.floor(Math.random()*6)];applyRollValues(r,false)}
  },delay);
 }
 
@@ -1105,7 +1303,10 @@ function startGiftSix(seat){
  g.resumeStack=Array.isArray(g.resumeStack)?g.resumeStack:[];
  g.resumeStack.push({
    turn:g.turn,d:[...g.d],used:[...g.used],selected:null,sum:false,rolled:g.rolled,double:g.double,
-   trapOnlySelection:false,forcedSix:!!g.forcedSix
+   trapOnlySelection:false,forcedSix:!!g.forcedSix,
+   doubleStreak:Number(g.doubleStreak)||0,
+   doubleStreakSeat:Number.isInteger(g.doubleStreakSeat)?g.doubleStreakSeat:null,
+   tripleKushPending:!!g.tripleKushPending
  });
  g.turn=seat;
  g.d=[6,6];
@@ -1148,15 +1349,9 @@ function finishTurn(){
  // Победа проверяется и после обычного хода, и после переданной шестёрки.
  if(player().pieces.every(p=>p.state==="home")){
    cancelBotTimer();
-   if(gameMode==="bot"){
-     setStatus(isBotTurn()
-       ? `Компьютер (${player().name}) победил. Попробуйте реванш!`
-       : `Вы победили! Все пять фишек в Домике.`);
-   }else{
-     setStatus(`${player().name} победил! Проигравший выполняет: ${g.forfeit || "желание с колеса"}.`);
-   }
    $("#roll").disabled=true;
    yandexGameplayStop();
+   showVictory(g.turn);
    return;
  }
 
@@ -1168,6 +1363,8 @@ function finishTurn(){
 
  const extra=g.double;
  g.double=false;
+ g.tripleKushPending=false;
+ updateTripleKushCard();
  g.rolled=false;
  g.used=[false,false];
  g.selected=null;
@@ -1177,7 +1374,11 @@ function finishTurn(){
  animating=false;
  clearDice();
 
- if(!extra)g.turn=nextActiveSeat(g.turn);
+ if(!extra){
+   g.doubleStreak=0;
+   g.doubleStreakSeat=null;
+   g.turn=nextActiveSeat(g.turn);
+ }
  updateUI();
  renderPieces();
 
@@ -1280,6 +1481,8 @@ function openWheel(){
  yandexGameplayStop();
  startMusic();
  pendingPlayerCount=Number($("#count").value)||4;
+ pendingLocalHumanCount=pendingPlayerCount;
+ pendingLocalFillBots=!!$("#fillLocalBots")?.checked && pendingPlayerCount<4;
  selectedWish=null;
  $("#localModal").classList.remove("show");
  $("#wheelModal").classList.add("show");
@@ -1492,9 +1695,7 @@ document.addEventListener("keydown",unlockMusicOnce,{once:false});
 
 function updateUI(){
  let p=player();
- $("#player").textContent=gameMode==="bot"
-   ? (isBotTurn()?`Компьютер — ${p.name}`:`Вы — ${p.name}`)
-   : playerLabel(p);
+ $("#player").textContent=isBotTurn()?`${p.playerName||"Компьютер"} — ${p.name}`:playerLabel(p);
  $("#player").style.color=p.id==="red"?"#c51c29":p.id==="blue"?"#007e92":p.id==="black"?"#111":"#164b8c";
  const order=$("#turnOrder");
  if(order) order.textContent=g.players.map(x=>`${playerLabel(x)}${x.eliminated?" (выбыл)":""}`).join(" → ");
@@ -1508,6 +1709,31 @@ function updateUI(){
    }else you.hidden=true;
  }
 }
+let fireworksRAF=null,fireworksParticles=[];
+function stopFireworks(){
+ if(fireworksRAF){cancelAnimationFrame(fireworksRAF);fireworksRAF=null}
+ fireworksParticles=[];
+}
+function startFireworks(){
+ stopFireworks();
+ const canvas=$("#victoryCanvas");if(!canvas)return;
+ const ctx=canvas.getContext("2d");
+ const resize=()=>{const r=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.floor(r.width*devicePixelRatio));canvas.height=Math.max(1,Math.floor(r.height*devicePixelRatio));ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)};
+ resize();
+ const colors=["#ffcf33","#ff5364","#61d3ff","#8cff6a","#c77cff","#ffffff"];let last=0;
+ function burst(w,h){const x=50+Math.random()*Math.max(40,w-100),y=55+Math.random()*Math.max(80,h*.5);const c=colors[Math.floor(Math.random()*colors.length)];for(let i=0;i<36;i++){const a=Math.random()*Math.PI*2,s=1.5+Math.random()*4.4;fireworksParticles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,c})}}
+ function frame(t){const r=canvas.getBoundingClientRect(),w=r.width,h=r.height;if(t-last>480){burst(w,h);last=t}ctx.clearRect(0,0,w,h);for(const p of fireworksParticles){p.x+=p.vx;p.y+=p.vy;p.vy+=.035;p.vx*=.993;p.life-=.014;ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,2.2,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;fireworksParticles=fireworksParticles.filter(p=>p.life>0);fireworksRAF=requestAnimationFrame(frame)}
+ fireworksRAF=requestAnimationFrame(frame);
+}
+function showVictory(seat,statusText=""){
+ const pl=g?.players?.[seat];if(!pl)return;
+ const modal=$("#victoryModal"),title=$("#victoryTitle"),sub=$("#victorySubtitle");
+ if(title)title.textContent=`${pl.playerName||"Игрок"} победил!`;
+ if(sub)sub.textContent=`Победные фишки: ${pl.name}. Все 5 фишек в Домике.`+(statusText?` ${statusText}`:"");
+ modal?.classList.add("show");startFireworks();
+}
+function closeVictory(){stopFireworks();$("#victoryModal")?.classList.remove("show")}
+
 function setStatus(s){$("#status").textContent=s}
 function closeGameMenus(){
   ["#mainMenu","#localModal","#botModal","#randomOnlineModal","#onlineCreateModal","#onlineJoinModal","#onlineLobbyModal","#wheelModal"].forEach(sel=>{
@@ -1546,11 +1772,16 @@ $("#joinOnline").onclick=()=>{
 };
 document.querySelectorAll(".backToMenu").forEach(b=>b.onclick=showMainMenu);
 
+const localCountEl=$("#count"),localFillWrap=$("#fillLocalBotsWrap");
+function updateLocalFillOffer(){if(localFillWrap)localFillWrap.hidden=Number(localCountEl?.value||4)>=4}
+localCountEl?.addEventListener("change",updateLocalFillOffer);updateLocalFillOffer();
+$("#victoryMenu").onclick=()=>{closeVictory();showMainMenu()};
+$("#victoryAgain").onclick=()=>{const mode=gameMode;closeVictory();showMainMenu();if(mode==="local"||mode==="mixed"){$("#mainMenu").classList.remove("show");$("#localModal").classList.add("show")}else if(mode==="bot"){$("#mainMenu").classList.remove("show");$("#botModal").classList.add("show")}};
 $("#start").onclick=openWheel;
 $("#spinWheel").onclick=spinFortune;
 $("#beginGame").onclick=()=>{
  if(window.MondavoshkaOnline?.active && window.MondavoshkaOnline.pendingStart) window.MondavoshkaOnline.startGame(selectedWish);
- else newGame(pendingPlayerCount,selectedWish);
+ else newGame(pendingLocalHumanCount,selectedWish,pendingLocalFillBots);
 };
 $("#musicToggle").onclick=toggleMusic;
 $("#sfxToggle").onclick=toggleSfx;
@@ -1571,3 +1802,5 @@ document.addEventListener("visibilitychange",()=>{
     yandexGameplayStart();
   }
 });
+
+window.MondavoshkaVictory={show:showVictory,close:closeVictory};
