@@ -255,7 +255,8 @@ function chooseAutoController(room,timedOutSeat){
  return live[0]||null;
 }
 function awardAfkCompensation(room,loserSeat,amount=20){
- const reason=`+${amount} очков: соперник выбыл после третьей просрочки хода`;
+ const recipients=[];
+ const reason=`+${amount} очков: соперник проиграл из-за просрочек/выхода из партии`;
  for(const rp of room.players){
    if(rp.bot||rp.seat===loserSeat||room.state?.players?.[rp.seat]?.eliminated||!rp.profileId)continue;
    const p=getProfile(rp.profileId,rp.name);
@@ -263,12 +264,66 @@ function awardAfkCompensation(room,loserSeat,amount=20){
    p.balance=(p.balance||0)+amount;
    p.updatedAt=Date.now();
    saveProfiles();
+   recipients.push(rp.seat);
    if(rp.connected&&rp.ws)send(rp.ws,{
      type:"rating_award",delta:amount,matchPoints:room.matchPoints[rp.seat]||0,
      profile:pubProfile(p),reason
    });
  }
+ return recipients;
 }
+function finishForcedLoss(room,loserSeat,reason,bonus=20){
+ if(room.gameOver)return;
+ const loser=room.players.find(x=>x.seat===loserSeat);
+ if(room.state?.players?.[loserSeat])room.state.players[loserSeat].eliminated=true;
+
+ const rewarded=awardAfkCompensation(room,loserSeat,bonus);
+
+ room.gameOver=true;
+ room.deadline=0;
+ room.actionSeat=null;
+ room.autoSeat=null;
+ room.autoControllerSeat=null;
+ room.winnerSeat=null;
+ if(room.state)room.state.gameOver=true;
+
+ const remainingReal=room.players.filter(x=>!x.bot&&x.seat!==loserSeat&&!room.state?.players?.[x.seat]?.eliminated);
+ let winnerSeat=null;
+ if(remainingReal.length===1)winnerSeat=remainingReal[0].seat;
+
+ for(const rp of room.players){
+   if(!rp.profileId)continue;
+   const p=getProfile(rp.profileId,rp.name);
+   p.games=(p.games||0)+1;
+   if(rp.seat===winnerSeat)p.wins=(p.wins||0)+1;
+   saveProfiles();
+   if(rp.connected&&rp.ws)send(rp.ws,{
+     type:"rating_award",delta:0,matchPoints:room.matchPoints[rp.seat]||0,profile:pubProfile(p)
+   });
+ }
+
+ room.version++;
+ const rewardedNames=rewarded.map(seat=>room.players.find(x=>x.seat===seat)?.name).filter(Boolean);
+ const bonusText=rewardedNames.length
+   ? ` Остальные игроки получили по +${bonus} очков: ${rewardedNames.join(", ")}.`
+   : "";
+
+ room.status=`${loser?.name||"Игрок"} ${reason}.${bonusText}`;
+ broadcast(room,{
+   type:"match_over",
+   winnerSeat:Number.isInteger(winnerSeat)?winnerSeat:null,
+   loserSeat,
+   state:room.state,
+   status:room.status,
+   deadline:0,
+   misses:room.misses,
+   matchPoints:room.matchPoints,
+   version:room.version,
+   autoSeat:null,
+   autoControllerSeat:null
+ });
+}
+
 function beginTimeoutAutoplay(room,seat){
  const controller=chooseAutoController(room,seat);
  // If another real client is available, it temporarily runs the same bot
@@ -296,6 +351,7 @@ function beginTimeoutAutoplay(room,seat){
 function timeoutTurn(room){
  if(!room.started||room.gameOver||!room.state||Date.now()<room.deadline)return;
  const seat=room.state.turn;
+
  if(room.state.players[seat]?.eliminated){
    room.state.turn=nextActiveSeat(room.state,seat);
    room.autoSeat=null;room.autoControllerSeat=null;room.actionSeat=null;
@@ -305,41 +361,28 @@ function timeoutTurn(room){
  room.misses[seat]=(room.misses[seat]||0)+1;
  const rp=room.players.find(x=>x.seat===seat);
 
- // 1-я и 2-я просрочка: игрок не теряет сам ход — система делает его за него.
+ // 1-я и 2-я просрочка: система делает ход за игрока.
  if(room.misses[seat]<MAX_MISSES){
    if(beginTimeoutAutoplay(room,seat))return;
 
-   // Редкий аварийный случай: нет ни одного другого подключённого клиента,
-   // который мог бы отрисовать и рассчитать автоход. Тогда не зависаем:
-   // передаём очередь, сохраняя счётчик просрочек.
-   resetTurnState(room.state);room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;
+   // Если нет другого клиента для автохода — не зависаем.
+   resetTurnState(room.state);
+   room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;
    room.state.turn=nextActiveSeat(room.state,seat);room.version++;
-   room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Автоход недоступен из-за отсутствия других подключённых клиентов.`;
-   broadcast(room,{type:"turn_timeout",seat,missesCount:room.misses[seat],state:room.state,status:room.status,
-     deadline:0,misses:room.misses,matchPoints:room.matchPoints,version:room.version,autoSeat:null,autoControllerSeat:null});
-   startTurnTimer(room);return;
- }
-
- // 3-я просрочка: автоматическое поражение/выбывание.
- room.state.players[seat].eliminated=true;
- resetTurnState(room.state);room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;
- awardAfkCompensation(room,seat,20);
-
- const alive=activeSeats(room.state);
- if(alive.length<=1){
-   const winnerSeat=alive[0]??nextActiveSeat(room.state,seat);
-   finishMatch(room,winnerSeat,`${rp?.name||"Игрок"} трижды не успел сделать ход и автоматически проиграл.`);
+   room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Автоход временно недоступен, очередь передана дальше.`;
+   broadcast(room,{
+     type:"turn_timeout",seat,missesCount:room.misses[seat],state:room.state,status:room.status,
+     deadline:0,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
+     autoSeat:null,autoControllerSeat:null
+   });
+   startTurnTimer(room);
    return;
  }
 
- room.state.turn=nextActiveSeat(room.state,seat);
- room.version++;
- room.status=`${rp?.name||"Игрок"} трижды не успел сделать ход и выбыл. Остальные активные реальные игроки получили по 20 очков.`;
- broadcast(room,{type:"turn_timeout",seat,missesCount:room.misses[seat],state:room.state,status:room.status,
-   deadline:0,misses:room.misses,matchPoints:room.matchPoints,version:room.version,autoSeat:null,autoControllerSeat:null});
- broadcast(room,{type:"state_sync",state:room.state,status:room.status,actionSeat:null,deadline:0,
-   misses:room.misses,matchPoints:room.matchPoints,version:room.version,autoSeat:null,autoControllerSeat:null});
- startTurnTimer(room);
+ // 3-я просрочка: поражение игрока и НЕМЕДЛЕННОЕ завершение всей партии.
+ resetTurnState(room.state);
+ room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;
+ finishForcedLoss(room,seat,"трижды не успел сделать ход и автоматически проиграл",20);
 }
 
 function onMessage(ws,m){
@@ -366,9 +409,19 @@ function onMessage(ws,m){
  const room=rooms.get(String(m.code||ws._room||""));if(!room)return err(ws,"Комната не найдена.");
  const p=room.players.find(x=>x.token===ws._token);if(!p)return err(ws,"Игрок не найден в комнате.");room.lastActive=Date.now();
  if(m.type==="leave_room"){
-   if(!room.started){room.players=room.players.filter(x=>x.token!==p.token);compactSeats(room)}
-   else{p.connected=false;p.ws=null}
-   ws._room=null;ws._token=null;roomUpdate(room);if(!room.players.filter(x=>!x.bot).length)rooms.delete(room.code);return;
+   if(!room.started){
+     room.players=room.players.filter(x=>x.token!==p.token);
+     compactSeats(room);
+   }else if(m.forfeit){
+     finishForcedLoss(room,p.seat,"добровольно вышел из партии и получил поражение",20);
+     p.connected=false;p.ws=null;
+   }else{
+     p.connected=false;p.ws=null;
+   }
+   ws._room=null;ws._token=null;
+   roomUpdate(room);
+   if(!room.players.filter(x=>!x.bot).length)rooms.delete(room.code);
+   return;
  }
  if(m.type==="start_game"){
    if(!p.host)return err(ws,"Начать игру может только создатель комнаты.");
@@ -471,4 +524,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V35: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V40: http://localhost:${PORT}`));
