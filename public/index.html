@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Мондавошка V39 — Mobile</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Мондавошка V40 — выход и завершение по 3 просрочкам</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -57,6 +57,7 @@
         <button id="musicToggle" type="button">♫ Музыка: вкл</button>
         <button id="sfxToggle" type="button">🔊 Звуки: вкл</button>
         <button id="newGame" type="button">Новая игра</button>
+        <button id="exitGame" type="button" hidden>Выйти из игры</button>
       </div>
     </header>
 <div class="mobileHint">📱 Мобильный режим: поле подстраивается под экран, зоны нажатия фишек увеличены.</div>
@@ -274,6 +275,17 @@
         <div class="wheelButtons">
           <button id="spinWheel" type="button">Крутить колесо</button>
           <button id="beginGame" type="button" disabled>Начать игру</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="exitGameModal">
+      <div class="dialog exitGameDialog">
+        <h2>Выйти из игры?</h2>
+        <p id="exitGameText">Текущая партия будет закрыта.</p>
+        <div class="dialogActions">
+          <button id="cancelExitGame" type="button">Остаться</button>
+          <button id="confirmExitGame" class="dangerAction" type="button">Выйти</button>
         </div>
       </div>
     </div>

@@ -289,6 +289,7 @@ function buildGameState(n,wish=selectedWish){
 function activateGameState(state,mode="local",statusText="Бросьте две кости."){
  yandexGameplayStart();
  gameMode=mode;
+ const exitBtn=$("#exitGame");if(exitBtn)exitBtn.hidden=false;
  g=JSON.parse(JSON.stringify(state));
  closeGameMenus();
  clearDice();
@@ -1819,6 +1820,13 @@ function showVictory(seat,statusText=""){
  if(sub)sub.textContent=`Победные фишки: ${pl.name}. Все 5 фишек в Домике.`+(statusText?` ${statusText}`:"");
  modal?.classList.add("show");startFireworks();
 }
+function showMatchEnded(statusText="Партия завершена."){
+ const modal=$("#victoryModal"),title=$("#victoryTitle"),sub=$("#victorySubtitle");
+ if(title)title.textContent="Партия завершена";
+ if(sub)sub.textContent=statusText;
+ modal?.classList.add("show");
+ startFireworks();
+}
 function closeVictory(){stopFireworks();$("#victoryModal")?.classList.remove("show")}
 
 function setStatus(s){$("#status").textContent=s}
@@ -1830,6 +1838,8 @@ function closeGameMenus(){
 function showMainMenu(){
   cancelBotTimer();
   yandexGameplayStop();
+  const exitBtn=$("#exitGame");if(exitBtn)exitBtn.hidden=true;
+  $("#exitGameModal")?.classList.remove("show");
   if(window.MondavoshkaOnline?.active) window.MondavoshkaOnline.leave(false);
   closeGameMenus();
   $("#mainMenu").classList.add("show");
@@ -1874,6 +1884,26 @@ $("#musicToggle").onclick=toggleMusic;
 $("#sfxToggle").onclick=toggleSfx;
 updateSfxButton();
 $("#newGame").onclick=showMainMenu;
+
+$("#exitGame").onclick=()=>{
+ const modal=$("#exitGameModal"),text=$("#exitGameText");
+ if(text){
+   text.textContent=(gameMode==="online"&&window.MondavoshkaOnline?.active)
+     ?"Если выйти из онлайн-партии, это будет считаться добровольным поражением. Партия завершится для всех остальных игроков."
+     :"Текущая партия завершится, и вы вернётесь в главное меню.";
+ }
+ modal?.classList.add("show");
+};
+$("#cancelExitGame").onclick=()=>$("#exitGameModal")?.classList.remove("show");
+$("#confirmExitGame").onclick=()=>{
+ $("#exitGameModal")?.classList.remove("show");
+ if(gameMode==="online"&&window.MondavoshkaOnline?.active){
+   window.MondavoshkaOnline.forfeitAndLeave?.();
+ }else{
+   showMainMenu();
+ }
+};
+
 $("#roll").onclick=roll;
 dice.forEach((b,i)=>b.onclick=()=>selectDie(i));
 $("#sum").onclick=selectSum;
@@ -1890,4 +1920,4 @@ document.addEventListener("visibilitychange",()=>{
   }
 });
 
-window.MondavoshkaVictory={show:showVictory,close:closeVictory};
+window.MondavoshkaVictory={show:showVictory,showEnded:showMatchEnded,close:closeVictory};

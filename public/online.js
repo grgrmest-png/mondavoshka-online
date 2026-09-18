@@ -199,12 +199,20 @@
  }
  function leave(showMenu=true){
    if(S.randomSearching&&!S.active)send({type:"cancel_random"});
-   if(S.connected&&S.code)send({type:"leave_room",code:S.code});
+   if(S.connected&&S.code)send({type:"leave_room",code:S.code,forfeit:false});
    S.manualClose=true;try{S.socket?.close()}catch{}
    clearTimeout(S.reconnectTimer);
    S.socket=null;S.active=false;S.connected=false;S.started=false;S.code=null;S.token=null;S.seat=null;S.host=false;S.players=[];S.actionSeat=null;S.pendingStart=false;S.lastVersion=0;S.randomSearching=false;S.matchMode="room";S.deadline=0;S.misses=[];S.matchPoints=[];
    clearSession();gameMode="local";
    if(showMenu){closeGameMenus();document.querySelector("#mainMenu")?.classList.add("show")}
+ }
+ function forfeitAndLeave(){
+   if(S.connected&&S.code&&S.started){
+     send({type:"leave_room",code:S.code,forfeit:true});
+     setTimeout(()=>leave(true),180);
+   }else{
+     leave(true);
+   }
  }
  function startGame(wish){
    const realPlayers=S.players.filter(p=>p.connected&&!p.bot);
@@ -285,7 +293,11 @@
      applyTimer(m);S.actionSeat=null;
      const roll=document.querySelector("#roll");if(roll)roll.disabled=true;
      window.MondavoshkaProfile?.loadLeaderboard?.();
-     if(Number.isInteger(m.winnerSeat))setTimeout(()=>window.MondavoshkaVictory?.show?.(m.winnerSeat,m.status||""),250);
+     if(Number.isInteger(m.winnerSeat)){
+       setTimeout(()=>window.MondavoshkaVictory?.show?.(m.winnerSeat,m.status||""),250);
+     }else{
+       setTimeout(()=>window.MondavoshkaVictory?.showEnded?.(m.status||"Партия завершена."),250);
+     }
      return;
    }
    if(m.type==="player_left"){
@@ -311,6 +323,6 @@
 
  window.MondavoshkaOnline={
    get active(){return S.active},get connected(){return S.connected},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
-   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,wsUrl,playerTextBySeat
+   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,wsUrl,playerTextBySeat
  };
 })();

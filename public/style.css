@@ -639,3 +639,21 @@ button{-webkit-tap-highlight-color:transparent}
 @media (prefers-reduced-motion:reduce){
   .piece.can,.tripleKushCard{animation:none !important}
 }
+
+/* V40 — выход из активной партии */
+#exitGame{
+  background:linear-gradient(180deg,#7f3a2f,#54251f);
+  color:#fff1df;
+  border-color:#9a5445;
+}
+#exitGame[hidden]{display:none!important}
+.exitGameDialog{max-width:520px;text-align:center}
+.exitGameDialog p{line-height:1.5}
+.dangerAction{
+  background:linear-gradient(180deg,#b53a31,#751d19)!important;
+  color:#fff!important;
+}
+@media(max-width:700px){
+  #exitGame{grid-column:1/-1;min-height:42px}
+  .exitGameDialog{max-width:100%}
+}
