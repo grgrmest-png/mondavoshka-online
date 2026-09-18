@@ -343,14 +343,50 @@ function prisonSlotIndex(pc){
   const idx = list.findIndex(x=>x.id===pc.id);
   return free[Math.max(0, idx)] ?? 0;
 }
+function samePoint(a,b,eps=.7){
+ return !!a&&!!b&&Math.abs(a[0]-b[0])<=eps&&Math.abs(a[1]-b[1])<=eps;
+}
+function isTrackPoint(p){
+ return TRACK.some(t=>samePoint(t,p));
+}
+function expandTrackWalkPoints(pc,points){
+ if(!pc||pc.state!=="track"||!Array.isArray(points)||!points.length)return points||[];
+ const out=[];
+ let prev=pos(pc,g.players[pc.owner]);
+
+ for(const target of points){
+   if(isTrackPoint(prev)&&isTrackPoint(target)){
+     const dx=Math.abs(target[0]-prev[0]),dy=Math.abs(target[1]-prev[1]);
+     if(dx>.7&&dy>.7){
+       const c1=[target[0],prev[1]];
+       const c2=[prev[0],target[1]];
+       const c1Track=isTrackPoint(c1),c2Track=isTrackPoint(c2);
+       if(c1Track&&!samePoint(c1,prev)&&!samePoint(c1,target))out.push(c1);
+       else if(c2Track&&!samePoint(c2,prev)&&!samePoint(c2,target))out.push(c2);
+     }
+   }
+   out.push(target);
+   prev=target;
+ }
+ return out;
+}
+function walkPreviewCoords(previewMove){
+ if(!previewMove)return[];
+ const pc=allPieces().find(p=>p.id===previewMove.id);
+ return pc?expandTrackWalkPoints(pc,previewMove.routeCoords||[]):(previewMove.routeCoords||[]);
+}
+
 function renderPieces(){
  if(!g)return;
  updateTripleKushCard();
  svg.querySelectorAll(".piece,.route,.shards").forEach(e=>e.remove());
  if(preview){
-   const coords=preview.routeCoords||[];
+   const coords=walkPreviewCoords(preview);
    if(coords.length){
-     let pts=coords.map(p=>p.join(",")).join(" ");
+     const pc=allPieces().find(p=>p.id===preview.id);
+     const start=pc?pos(pc,g.players[pc.owner]):null;
+     const shown=start?[start,...coords]:coords;
+     let pts=shown.map(p=>p.join(",")).join(" ");
      E("polyline",{points:pts,class:"route"});
    }
    (preview.path||[]).forEach(i=>svg.querySelector(`[data-cell="${i}"]`)?.classList.add("path"));
@@ -1021,26 +1057,35 @@ async function execute(pc,mv){
 }
 
 function animate(pc,points,dur,kind){
- return new Promise(res=>{
+ return new Promise(async res=>{
    const el=svg.querySelector(`[data-id="${pc.id}"]`);
    if(!el||!points.length){res();return}
-   const start=pos(pc,g.players[pc.owner]);
-   const frames=[{transform:"translate(0px,0px) scale(1)"}];
-   points.forEach((p,i)=>{
-     const dx=p[0]-start[0],dy=p[1]-start[1];
-     frames.push({transform:`translate(${dx}px,${dy}px) scale(1)`});
-   });
-   if(kind==="walk"){
-     const count=Math.max(1,points.length);
-     points.forEach((_,i)=>setTimeout(()=>sfxStep(),Math.max(0,Math.round(dur*(i+.72)/count)-25)));
+
+   const base=pos(pc,g.players[pc.owner]);
+   const route=kind==="walk"?expandTrackWalkPoints(pc,points):points.slice();
+   let prev=base;
+   const segmentDur=Math.max(75,Math.round(dur/Math.max(1,route.length)));
+
+   for(let i=0;i<route.length;i++){
+     const target=route[i];
+     const fromDx=prev[0]-base[0],fromDy=prev[1]-base[1];
+     const toDx=target[0]-base[0],toDy=target[1]-base[1];
+
+     if(kind==="walk")sfxStep();
+
+     const a=el.animate([
+       {transform:`translate(${fromDx}px,${fromDy}px) scale(1)`},
+       {transform:`translate(${toDx}px,${toDy}px) scale(1)`}
+     ],{
+       duration:segmentDur,
+       easing:"ease-in-out",
+       fill:"forwards"
+     });
+
+     try{await a.finished}catch{}
+     prev=target;
    }
-   const a=el.animate(frames,{
-     duration:dur,
-     easing:kind==="fall"?"cubic-bezier(.28,.72,.28,1)":"ease-in-out",
-     fill:"forwards"
-   });
-   a.onfinish=()=>res();
-   a.oncancel=()=>res();
+   res();
  });
 }
 
