@@ -349,3 +349,76 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:15px}.boardbox{a
 /* V28 — пленные сохраняют свой цвет, кубики никогда не пустые */
 .piece.captive{opacity:1}
 .die:disabled span{opacity:1}
+
+
+/* ===== V29 — игра против компьютера ===== */
+.botHint{
+  margin:14px 0 4px;
+  padding:12px 13px;
+  border-radius:9px;
+  background:#d7b27a66;
+  border:1px solid #9b7043;
+  line-height:1.45;
+}
+#botModal select{
+  width:100%;
+  box-sizing:border-box;
+  margin-top:6px;
+  padding:11px 12px;
+  border:2px solid #9b6d36;
+  border-radius:9px;
+  background:#fff4d8;
+  color:#2e1a0e;
+  font-weight:800;
+}
+
+
+/* ===== V30 — случайный онлайн и имена игроков ===== */
+.youAre{
+  margin-top:7px;padding:7px 9px;border-radius:8px;background:#d7b27a55;border:1px solid #a87942;
+  font-size:13px;font-weight:900;color:#4a2b17;
+}
+.randomStatus{
+  min-height:42px;margin:12px 0 4px;padding:10px 12px;border-radius:9px;
+  background:#ead0a0;border:1px solid #aa7a43;font-weight:900;line-height:1.35;
+}
+.randomSpinner{
+  display:none;width:15px;height:15px;margin-right:8px;vertical-align:-2px;border:2px solid #80501f55;
+  border-top-color:#6a3c18;border-radius:50%;animation:randomSpin .8s linear infinite;
+}
+@keyframes randomSpin{to{transform:rotate(360deg)}}
+#randomOnlineModal select{
+  width:100%;box-sizing:border-box;margin-top:6px;padding:11px 12px;border:2px solid #9b6d36;border-radius:9px;
+  background:#fff4d8;color:#2e1a0e;font-weight:800;
+}
+.randomActions{flex-wrap:wrap}
+@media (prefers-reduced-motion:reduce){.randomSpinner{animation:none}}
+
+/* ===== V31: рейтинговый хаб, таймер и магазин ===== */
+.hubDialog{width:min(900px,94vw);max-width:900px}
+.hubHeader{display:flex;gap:18px;justify-content:space-between;align-items:center;border-bottom:2px solid #8a5529;padding-bottom:14px;margin-bottom:16px}
+.profilePanel{display:flex;align-items:center;gap:10px;background:#f0cf96;border:2px solid #8b572a;border-radius:12px;padding:8px 10px;min-width:310px}
+.profileAvatar{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#71401f;color:#ffe9ba;font:900 22px Georgia}
+.profileInfo{display:flex;flex-direction:column;min-width:0;flex:1}.profileInfo b{font-size:16px}.profileInfo small{font-size:12px}
+#profileLogin{padding:7px 9px;font-size:12px}
+.hubBody{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(250px,.75fr);gap:16px}
+.mainMenuButtons .featuredMode{background:linear-gradient(180deg,#ffd989,#e7a94f);border-width:3px}
+.mainMenuButtons button span:last-child{display:flex;flex-direction:column;align-items:flex-start}
+.mainMenuButtons button small{font-size:11px;opacity:.72;font-weight:700}
+.hubSide{display:flex;flex-direction:column;gap:10px}
+.hubFeature,.hubRules{padding:14px;border:2px solid #8b572a;border-radius:12px;background:#efd09c;text-align:left}
+.hubFeature{cursor:pointer}.hubFeature b,.hubFeature span,.hubRules b,.hubRules span{display:block}.hubFeature span,.hubRules span{font-size:12px;margin-top:5px;line-height:1.35}
+.modalTitleRow{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}.modalTitleRow h2{margin-top:0}
+.ratingDialog,.shopDialog{width:min(920px,94vw);max-width:920px;max-height:86vh;overflow:auto}
+.ratingList{display:grid;gap:7px}.ratingRow{display:grid;grid-template-columns:42px 1fr auto;align-items:center;padding:10px 12px;border-radius:9px;background:#efd2a2;border:1px solid #b37b3f}.ratingRow.me{outline:3px solid #d6942d}.ratingPlace{font-size:18px;font-weight:900}.ratingRow b{font-size:18px}.ratingLoading{text-align:center;padding:20px;opacity:.7}
+.skinGrid{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px}.skinCard{background:#efd2a2;border:2px solid #a46c36;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center}.skinCard.equipped{outline:3px solid #4d8d45}.skinCard button{width:100%;padding:7px 5px;font-size:12px}.skinPiece{width:52px;height:52px;border-radius:50%;border:5px solid #5c351d;box-shadow:inset -8px -9px 12px #0003,inset 8px 7px 10px #fff5}.skinCard em{font-size:9px;line-height:1.2;opacity:.65;font-style:normal}
+.turnTimerCard{padding:10px 12px}.turnTimerTop{display:flex;justify-content:space-between;align-items:center}.turnTimerTop strong{font-size:25px}.timerBar{height:9px;background:#c8a472;border-radius:999px;overflow:hidden;margin:7px 0}.timerBar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#5d9b48,#dc9e37,#c84538);transition:width .25s linear}
+.matchScoreCard strong{font-size:25px;margin-left:8px}.ratingToast{position:absolute;right:22px;top:118px;z-index:30;background:#2d6d3a;color:#fff;padding:9px 13px;border-radius:9px;opacity:0;transform:translateY(-8px);pointer-events:none;transition:.2s}.ratingToast.show{opacity:1;transform:none}
+@media(max-width:760px){.hubHeader{align-items:stretch;flex-direction:column}.profilePanel{min-width:0}.hubBody{grid-template-columns:1fr}.skinGrid{grid-template-columns:repeat(2,minmax(120px,1fr))}.modalTitleRow{flex-direction:column}.ratingToast{position:fixed;right:12px;left:12px;top:12px;text-align:center}}
+
+/* V33 — кнопка звуков */
+#sfxToggle{
+  background:linear-gradient(180deg,#f5d89e,#dba657);
+  border:2px solid #70431c;
+  font-weight:800;
+}

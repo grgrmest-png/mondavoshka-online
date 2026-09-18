@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Мондавошка V25 Online</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Мондавошка V33 — звуки и плавные переходы</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -55,13 +55,24 @@
       <div><h1>МОНДАВОШКА</h1><p>Векторное поле • точные клетки • подсказка маршрута</p></div>
       <div class="headerActions">
         <button id="musicToggle" type="button">♫ Музыка: вкл</button>
+        <button id="sfxToggle" type="button">🔊 Звуки: вкл</button>
         <button id="newGame" type="button">Новая игра</button>
       </div>
     </header>
 <main>
 <section class="boardbox"><svg id="board" viewBox="0 0 1000 1000"></svg></section>
 <aside>
-<div class="card"><small>Ход игрока</small><div id="player" class="player">—</div><div id="status">Начните игру</div></div>
+<div class="card turnCard"><small>Сейчас ходит</small><div id="player" class="player">—</div><div id="youAre" class="youAre" hidden></div><div id="status">Начните игру</div></div>
+<div class="card turnTimerCard" id="turnTimerCard" hidden>
+  <div class="turnTimerTop"><b>Время хода</b><span><strong id="turnTimer">25</strong> сек</span></div>
+  <div class="timerBar"><i id="turnTimerBar"></i></div>
+  <small id="missCounter">Пропуски: 0 / 3</small>
+</div>
+<div class="card matchScoreCard" id="matchScoreCard" hidden>
+  <b>Очки за эту партию</b>
+  <strong id="matchPoints">0</strong><span> / 100</span>
+</div>
+<div id="ratingToast" class="ratingToast"></div>
 <div class="card dice">
 <button class="die" id="d0" disabled><span data-v="1"></span></button><button class="die" id="d1" disabled><span data-v="1"></span></button>
 <button id="roll" disabled>Бросить кости</button><button id="sum" disabled>Ход суммой не используется</button>
@@ -75,14 +86,51 @@
 </aside>
 </main></div>
 <div class="modal show" id="mainMenu">
-      <div class="dialog mainMenuDialog">
-        <div class="menuLogo">МОНДАВОШКА</div>
-        <div class="menuSubtitle">Выберите режим игры</div>
-        <div class="mainMenuButtons">
-          <button id="playLocal" type="button"><span class="menuNum">1</span><span>Играть на одном устройстве</span></button>
-          <button id="createOnline" type="button"><span class="menuNum">2</span><span>Создать онлайн-комнату</span></button>
-          <button id="joinOnline" type="button"><span class="menuNum">3</span><span>Войти по коду</span></button>
+      <div class="dialog mainMenuDialog hubDialog">
+        <div class="hubHeader">
+          <div>
+            <div class="menuLogo">МОНДАВОШКА</div>
+            <div class="menuSubtitle">Онлайн-рейтинг • быстрые партии • коллекция фишек</div>
+          </div>
+          <div class="profilePanel">
+            <div class="profileAvatar">М</div>
+            <div class="profileInfo"><b id="profileName">Игрок</b><small>🏆 Рейтинг: <strong id="profileRating">0</strong> · 💰 Баланс: <strong id="profileBalance">0</strong></small><small>Победы: <strong id="profileWins">0</strong></small></div>
+            <button id="profileLogin" type="button">Войти в Яндекс</button>
+          </div>
         </div>
+        <div class="hubBody">
+          <div class="mainMenuButtons">
+            <button id="randomOnline" class="featuredMode" type="button"><span class="menuNum">⚔</span><span><b>Быстрая онлайн-игра</b><small>Найти случайных соперников</small></span></button>
+            <button id="playBot" type="button"><span class="menuNum">🤖</span><span>Играть с компьютером</span></button>
+            <button id="createOnline" type="button"><span class="menuNum">＋</span><span>Создать онлайн-комнату</span></button>
+            <button id="joinOnline" type="button"><span class="menuNum">⌨</span><span>Войти по коду</span></button>
+            <button id="playLocal" type="button"><span class="menuNum">◉</span><span>Играть на одном устройстве</span></button>
+          </div>
+          <div class="hubSide">
+            <button id="openRating" class="hubFeature" type="button"><b>🏆 Рейтинг игроков</b><span>За каждую фишку в Домике +20 очков</span></button>
+            <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин фишек</b><span>10 цветов по 200 очков + премиум</span></button>
+            <div class="hubRules"><b>Онлайн-правило времени</b><span>25 секунд на ход. Три пропуска — автоматическое поражение.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="ratingModal">
+      <div class="dialog ratingDialog">
+        <div class="modalTitleRow"><h2>🏆 Рейтинг Мондавошки</h2><button class="hubBack" type="button">← В меню</button></div>
+        <p>Каждая фишка, вошедшая во внутренний Домик в онлайн-партии, приносит <b>20 рейтинговых очков</b>. За одну игру можно заработать максимум <b>100</b>.</p>
+        <div id="ratingList" class="ratingList"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="shopModal">
+      <div class="dialog shopDialog">
+        <div class="modalTitleRow"><div><h2>🛍 Магазин фишек</h2><p>Рейтинг не уменьшается при покупке. Тратится только баланс заработанных очков.</p></div><button class="hubBack" type="button">← В меню</button></div>
+        <h3>Цветные фишки — 200 очков</h3>
+        <div id="skinGrid" class="skinGrid"></div>
+        <h3>Премиум-фишки футбольных клубов</h3>
+        
+        <div id="premiumGrid" class="skinGrid premiumGrid"></div>
       </div>
     </div>
 
@@ -96,6 +144,48 @@
         <div class="dialogActions">
           <button class="backToMenu" type="button">← Назад</button>
           <button id="start" type="button">Далее — колесо фортуны</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="botModal">
+      <div class="dialog">
+        <h2>Игра с компьютером</h2>
+        <label>Количество соперников
+          <select id="botCount">
+            <option value="1" selected>1 компьютер — Красный против Чёрного</option>
+            <option value="2">2 компьютера — Красный, Чёрный, Синий</option>
+            <option value="3">3 компьютера — все четыре цвета</option>
+          </select>
+        </label>
+        <p class="botHint"><b>Вы играете Красными.</b> Компьютер сам бросает кости и выбирает ход. Он старается брать фишки, выходить из ловушек и быстрее заводить свои фишки в Домик.</p>
+        <div class="dialogActions">
+          <button class="backToMenu" type="button">← Назад</button>
+          <button id="startBot" type="button">Начать игру</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="randomOnlineModal">
+      <div class="dialog onlineDialog">
+        <h2>Играть со случайными людьми</h2>
+        <label>Ваше имя
+          <input id="randomPlayerName" type="text" maxlength="24" placeholder="Например: Гриша">
+        </label>
+        <label>Сколько игроков в партии
+          <select id="randomPlayerCount">
+            <option value="2" selected>2 игрока — быстрее всего найти соперника</option>
+            <option value="3">3 игрока</option>
+            <option value="4">4 игрока</option>
+          </select>
+        </label>
+        <div id="randomStatus" class="randomStatus"><span id="randomSpinner" class="randomSpinner"></span>Введите имя и начните поиск.</div>
+        <div id="randomOnlineError" class="onlineError"></div>
+        <p class="onlineHint">Игра подберёт людей, которые сейчас ищут партию с таким же количеством игроков.</p>
+        <div class="dialogActions randomActions">
+          <button class="backToMenu" type="button">← Назад</button>
+          <button id="cancelRandomBtn" type="button" style="display:none">Отменить поиск</button>
+          <button id="findRandomBtn" type="button">Найти соперников</button>
         </div>
       </div>
     </div>
@@ -134,8 +224,8 @@
 
     <div class="modal" id="onlineLobbyModal">
       <div class="dialog onlineDialog lobbyDialog">
-        <h2>Онлайн-комната</h2>
-        <div class="roomCodeBox">
+        <h2 id="lobbyHeading">Онлайн-комната</h2>
+        <div class="roomCodeBox" id="roomCodeBox">
           <small>Код комнаты</small>
           <strong id="lobbyCode">------</strong>
           <button id="copyRoomCode" type="button">Копировать код</button>
@@ -175,6 +265,7 @@
       </div>
     </div>
 <script src="i18n.js"></script>
+<script src="profile-shop.js"></script>
   <script src="game.js"></script>
 <script src="online-config.js"></script>
 <script src="online.js"></script>

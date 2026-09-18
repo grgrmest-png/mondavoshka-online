@@ -55,8 +55,32 @@ const TELE={};
 let g=null,preview=null,animating=false;
 const dice=[$("#d0"),$("#d1")];
 let gameMode="local";
+let botTimer=null;
+let botThinking=false;
+function isBotSeat(seat=g?.turn){return gameMode==="bot" && !!g?.botSeats?.includes(seat)}
+function isBotTurn(){return !!g && isBotSeat(g.turn)}
+function cancelBotTimer(){
+  if(botTimer){clearTimeout(botTimer);botTimer=null;}
+  botThinking=false;
+}
 function onlineActive(){return gameMode==="online" && !!window.MondavoshkaOnline?.active}
 function onlineCanAct(){return !onlineActive() || window.MondavoshkaOnline.canAct()}
+
+function seatStroke(id){
+ return id==="red"?"#a91321":id==="blue"?"#00677b":id==="black"?"#050505":"#174f8f";
+}
+function pieceSkin(pl){
+ const id=pl?.skinId||"default";
+ return window.MondavoshkaProfile?.skinVisual?.(id)||{color:null,name:"Классика"};
+}
+function nextActiveSeat(from){
+ if(!g?.players?.length)return 0;
+ for(let k=1;k<=g.players.length;k++){
+   const s=(from+k)%g.players.length;
+   if(!g.players[s]?.eliminated)return s;
+ }
+ return from;
+}
 
 function yandexGameplayStart(){
   try{ window.ysdk?.features?.GameplayAPI?.start(); }catch(e){}
@@ -82,6 +106,7 @@ let wheelRotation=0;
 let audioCtx=null;
 let musicTimer=null;
 let musicEnabled=true;
+let sfxEnabled=true;
 let musicStep=0;
 const MEDIEVAL_SCALE=[0,2,3,5,7,9,10,12]; // дорийский лад
 
@@ -185,9 +210,14 @@ function drawBoard(){
 
  renderPieces();
 }function player(){return g.players[g.turn]}
+function playerLabel(pl){
+ if(!pl)return "Игрок";
+ if(gameMode==="online"&&pl.playerName)return `${pl.playerName} — ${pl.name}`;
+ return pl.name;
+}
 function buildGameState(n,wish=selectedWish){
  return {
-   players:C.slice(0,n).map((c,owner)=>({...c,owner,pieces:Array.from({length:5},(_,i)=>({
+   players:C.slice(0,n).map((c,owner)=>({...c,owner,skinId:"default",profileId:null,eliminated:false,pieces:Array.from({length:5},(_,i)=>({
      id:c.id+i,owner,n:i,state:"yard",track:null,progress:0,homeIndex:null,
      trap:0,trapSide:null,captorSide:null
    }))})),
@@ -217,7 +247,27 @@ function activateGameState(state,mode="local",statusText="Бросьте две 
  else $("#roll").disabled=false;
 }
 function newGame(n,wish=selectedWish){
- activateGameState(buildGameState(n,wish),"local","Бросьте две кости.");
+ cancelBotTimer();
+ const state=buildGameState(n,wish);
+ if(state.players[0])state.players[0].skinId=window.MondavoshkaProfile?.equippedSkin||"default";
+ activateGameState(state,"local","Бросьте две кости.");
+}
+
+function buildBotGameState(botCount=1){
+ const count=Math.max(1,Math.min(3,Number(botCount)||1));
+ const state=buildGameState(count+1,null);
+ if(state.players[0])state.players[0].skinId=window.MondavoshkaProfile?.equippedSkin||"default";
+ state.botSeats=Array.from({length:count},(_,i)=>i+1);
+ state.players.forEach((pl,i)=>pl.bot=state.botSeats.includes(i));
+ return state;
+}
+
+function startBotGame(botCount=1){
+ cancelBotTimer();
+ selectedWish=null;
+ const state=buildBotGameState(botCount);
+ activateGameState(state,"bot","Ваш ход. Бросьте две кости.");
+ updatePenaltyCard();
 }
 function startOnlineGameState(state,statusText="Онлайн-партия началась."){
  activateGameState(state,"online",statusText);
@@ -292,9 +342,14 @@ function renderPieces(){
   E("circle",{cx:p[0],cy:p[1]+4,r:22,fill:"#111",stroke:"#050505","stroke-width":2},grp);
 
   // Пленный сохраняет СВОЙ цвет. Так сразу видно, чья именно фишка сидит в плену.
+  const skin=pieceSkin(pl);
   const grad = pl.id==="red"?"url(#redPiece)":pl.id==="blue"?"url(#bluePiece)":pl.id==="black"?"url(#blackPiece)":"url(#whitePiece)";
-  E("circle",{cx:p[0],cy:p[1],r:21,fill:grad,stroke:pc.state==="captured"?"#9b5b20":"#17100c","stroke-width":pc.state==="captured"?5:3,filter:"url(#pieceShadow)"},grp);
-  if(pl.id==="whiteblue"){
+  const fill=skin.color||grad;
+  E("circle",{cx:p[0],cy:p[1],r:21,fill,stroke:pc.state==="captured"?"#9b5b20":seatStroke(pl.id),"stroke-width":pc.state==="captured"?5:4,filter:"url(#pieceShadow)"},grp);
+  if(skin.stripe){
+    E("path",{d:`M${p[0]-15} ${p[1]-9} H${p[0]+15} M${p[0]-15} ${p[1]+2} H${p[0]+15}`,stroke:skin.stripe,"stroke-width":5,opacity:.9},grp);
+  }
+  if(pl.id==="whiteblue"&&!skin.color){
     E("path",{d:`M${p[0]-15} ${p[1]}h30 M${p[0]} ${p[1]-15}v30`,stroke:"#164b8c","stroke-width":8,"stroke-linecap":"round"},grp);
   }
   if(pc.state==="captured"){
@@ -320,9 +375,13 @@ function pos(pc,pl){
 
 function roll(){
  if(animating||!g||g.rolled)return;
+ if(isBotTurn()){
+   setStatus(`Компьютер (${player().name}) сейчас ходит.`);
+   return;
+ }
  if(onlineActive()){
    if(!onlineCanAct()){
-     setStatus(`Сейчас ходит ${player().name}. Ожидайте своей очереди.`);
+     setStatus(`Сейчас ходит ${playerLabel(player())}. Ожидайте своей очереди.`);
      window.MondavoshkaOnline.refreshControls();
      return;
    }
@@ -336,6 +395,7 @@ function applyRollValues(r,fromNetwork=false){
  if(animating||!g||g.rolled)return;
  animating=true;
  $("#roll").disabled=true;
+ sfxDiceRoll();
  try{
    dice.forEach(b=>{
      b.disabled=true;
@@ -485,6 +545,7 @@ function selectDie(i){
  else setStatus(`Ходим на ${g.d[i]}. Зелёным подсвечены допустимые фишки.`);
  resetCellClasses();
  renderPieces();
+ if(isBotTurn())scheduleBotMove();
 }
 
 function selectSum(){
@@ -630,7 +691,11 @@ function currentLegal(){
 
 async function pieceClick(pc){
  if(animating||pc.owner!==g.turn)return;
- if(onlineActive()&&!onlineCanAct()){setStatus(`Сейчас ходит ${player().name}. Ожидайте своей очереди.`);window.MondavoshkaOnline.refreshControls();return;}
+ if(isBotTurn()){
+   setStatus(`Компьютер (${player().name}) думает…`);
+   return;
+ }
+ if(onlineActive()&&!onlineCanAct()){setStatus(`Сейчас ходит ${playerLabel(player())}. Ожидайте своей очереди.`);window.MondavoshkaOnline.refreshControls();return;}
  const mv=legal(pc,stepsNow(),false,!!g.trapOnlySelection);
  if(!mv){setStatus("Этой фишкой так сходить нельзя.");return;}
  if(preview?.id!==pc.id){
@@ -687,12 +752,14 @@ async function execute(pc,mv){
      const exit=TRAP_META[side].exit;
      const enemy=enemyAt(exit,pc.owner);
      if(enemy)await capture(enemy,player().id);
-     await animate(pc,[TRACK[exit]],520,"fly");
+     const start=TRAP[side][pc.trap],end=TRACK[exit],control=trapCurveControl(side,start,end);
+     sfxArrow();
+     await animateBezier(pc,start,control,end,560,"trap");
      pc.state="track";
      pc.track=exit;
      pc.trap=0;
      pc.trapSide=null;
-     setStatus("Фишка вышла из ловушки.");
+     setStatus("Фишка плавно вышла из ловушки.");
    }else{
      const ok=await pushTrapFrom(side,next);
      if(ok){
@@ -725,9 +792,15 @@ async function execute(pc,mv){
 
      if(TRAP_ENTRY.has(pc.track)){
        const side=trapSideByEntry(pc.track);
+       const entry=pc.track;
        const ok=await pushTrapFrom(side,0);
        if(ok){
-         await animate(pc,[TRAP[side][0]],470,"fall");
+         // Перерисовываем фишку точно на входной клетке и только затем ведём
+         // её в ловушку. Так исключается рывок к старой позиции.
+         renderPieces();
+         const start=TRACK[entry],end=TRAP[side][0],control=trapCurveControl(side,start,end);
+         sfxTrap();
+         await animateBezier(pc,start,control,end,520,"trap");
          pc.state="trap";
          pc.trapSide=side;
          pc.track=null;
@@ -737,19 +810,207 @@ async function execute(pc,mv){
      }
      else if(DIAG_MAP[pc.track]){
        const jump=DIAG_MAP[pc.track];
-       await animate(pc,[TRACK[jump.to]],650,"fly");
+       const entry=pc.track;
+       // Сбрасываем предыдущую анимацию хода: новая SVG-фишка реально стоит
+       // на клетке стрелки, поэтому полёт начинается строго с неё.
+       renderPieces();
+       const start=TRACK[entry],end=TRACK[jump.to],control=[jump.cx,jump.cy];
+       sfxArrow();
+       await animateBezier(pc,start,control,end,720,"arrow");
        const enemy2=enemyAt(jump.to,pc.owner);
        if(enemy2)await capture(enemy2,player().id);
        pc.track=jump.to;
-       setStatus(`Переход по стрелке ${jump.label}.`);
+       setStatus(`Плавный переход по стрелке ${jump.label}.`);
      }
    }
  }
  animating=false;drawBoard();
 }
 
-function animate(pc,points,dur,kind){return new Promise(res=>{let el=svg.querySelector(`[data-id="${pc.id}"]`);if(!el||!points.length){res();return}let start=pos(pc,g.players[pc.owner]);let frames=[{transform:`translate(0px,0px) scale(1)`}];points.forEach((p,i)=>{let dx=p[0]-start[0],dy=p[1]-start[1],scale=kind==="fly"&&i<points.length-1?1.25:1;frames.push({transform:`translate(${dx}px,${dy}px) scale(${scale}) rotate(${kind==="fly"?360*(i+1):0}deg)`})});let a=el.animate(frames,{duration:dur,easing:kind==="fly"?"cubic-bezier(.15,.8,.25,1)":"ease-in-out",fill:"forwards"});a.onfinish=res})}
+function animate(pc,points,dur,kind){
+ return new Promise(res=>{
+   const el=svg.querySelector(`[data-id="${pc.id}"]`);
+   if(!el||!points.length){res();return}
+   const start=pos(pc,g.players[pc.owner]);
+   const frames=[{transform:"translate(0px,0px) scale(1)"}];
+   points.forEach((p,i)=>{
+     const dx=p[0]-start[0],dy=p[1]-start[1];
+     frames.push({transform:`translate(${dx}px,${dy}px) scale(1)`});
+   });
+   if(kind==="walk"){
+     const count=Math.max(1,points.length);
+     points.forEach((_,i)=>setTimeout(()=>sfxStep(),Math.max(0,Math.round(dur*(i+.72)/count)-25)));
+   }
+   const a=el.animate(frames,{
+     duration:dur,
+     easing:kind==="fall"?"cubic-bezier(.28,.72,.28,1)":"ease-in-out",
+     fill:"forwards"
+   });
+   a.onfinish=()=>res();
+   a.oncancel=()=>res();
+ });
+}
+
+function animateBezier(pc,start,control,end,dur,kind="arrow"){
+ return new Promise(res=>{
+   const el=svg.querySelector(`[data-id="${pc.id}"]`);
+   if(!el){res();return}
+   const base=pos(pc,g.players[pc.owner]);
+   const frames=[];
+   const steps=28;
+   for(let i=0;i<=steps;i++){
+     const t=i/steps,u=1-t;
+     const x=u*u*start[0]+2*u*t*control[0]+t*t*end[0];
+     const y=u*u*start[1]+2*u*t*control[1]+t*t*end[1];
+     const dx=x-base[0],dy=y-base[1];
+     const lift=Math.sin(Math.PI*t);
+     const scale=kind==="arrow"?1+.13*lift:1-.05*lift;
+     frames.push({transform:`translate(${dx}px,${dy}px) scale(${scale})`});
+   }
+   const a=el.animate(frames,{duration:dur,easing:"linear",fill:"forwards"});
+   a.onfinish=()=>res();
+   a.oncancel=()=>res();
+ });
+}
+
+function trapCurveControl(side,start,end){
+ const mx=(start[0]+end[0])/2,my=(start[1]+end[1])/2;
+ if(side==="blue")return[mx,Math.min(start[1],end[1])-18];
+ if(side==="red")return[mx,Math.max(start[1],end[1])+18];
+ if(side==="whiteblue")return[Math.max(start[0],end[0])+18,my];
+ return[Math.min(start[0],end[0])-18,my];
+}
+
+function botMoveScore(pc,mv,steps){
+ let score=0;
+
+ // Главный приоритет — закончить круг и продвигаться внутри Домика.
+ if(mv.finalKind==="home")score+=150+(Number(mv.destHome)||0)*18;
+ if(mv.homeMove)score+=125+(Number(mv.destHome)||0)*18;
+ if(Number(mv.destHome)===4)score+=130;
+
+ // В ловушке компьютер старается выбраться как можно быстрее.
+ if(pc.state==="trap")score+=95+(Number(pc.trap)||0)*22;
+
+ // Вывести новую фишку полезно, но не ценнее взятия/домика.
+ if(pc.state==="yard")score+=42;
+
+ // Выкуп пленника полезен, но учитываем, что шестёрка передастся captor'у.
+ if(mv.rescue)score+=38;
+
+ const directDest=Number.isInteger(mv.dest)?mv.dest:null;
+ if(directDest!=null){
+   const victim=enemyAt(directDest,pc.owner);
+   if(victim)score+=145;
+   if(CORNERS.has(directDest))score+=18;
+   if(TRAP_ENTRY.has(directDest))score-=45;
+ }
+ if(Number.isInteger(mv.jumpTo)){
+   const victim2=enemyAt(mv.jumpTo,pc.owner);
+   if(victim2)score+=125;
+   score+=30;
+   if(CORNERS.has(mv.jumpTo))score+=15;
+ }
+
+ score+=(mv.path?.length||0)*4;
+ score+=(mv.homePath?.length||0)*10;
+
+ // Небольшая вариативность при равноценных ходах.
+ score+=Math.random()*2.5;
+ return score;
+}
+
+function botCandidatesForDie(i){
+ if(!g||g.used[i])return[];
+ const value=g.d[i];
+ const unused=[0,1].filter(j=>!g.used[j]);
+ let trapOnly=false;
+
+ if(!g.forcedSix && unused.length===2 && g.d[0]!==g.d[1]){
+   const highIndex=g.d[0]>g.d[1]?0:1;
+   if(i!==highIndex)trapOnly=true;
+ }
+
+ return player().pieces
+   .map(pc=>({pc,mv:legal(pc,value,false,trapOnly)}))
+   .filter(x=>x.mv)
+   .map(x=>({...x,die:i,trapOnly,score:botMoveScore(x.pc,x.mv,value)}));
+}
+
+function chooseBotDieAndMove(){
+ if(!g||!g.rolled)return null;
+ const enabled=[0,1].filter(i=>!g.used[i]&&!dice[i].disabled);
+ if(!enabled.length)return null;
+
+ let options=[];
+ for(const i of enabled)options.push(...botCandidatesForDie(i));
+ if(!options.length)return null;
+
+ options.sort((a,b)=>b.score-a.score);
+ return options[0];
+}
+
+function scheduleBotMove(delay=620){
+ if(!isBotTurn()||!g?.rolled||botThinking)return;
+ if(botTimer)clearTimeout(botTimer);
+ botTimer=setTimeout(async()=>{
+   botTimer=null;
+   if(!isBotTurn()||!g?.rolled||animating||botThinking)return;
+
+   const choice=chooseBotDieAndMove();
+   if(!choice){
+     // На случай, если выбранная кость после изменения состояния перестала быть доступной.
+     beginOrderedDice();
+     return;
+   }
+
+   if(g.selected!==choice.die){
+     selectDie(choice.die);
+     return;
+   }
+
+   const current=legal(choice.pc,stepsNow(),false,!!g.trapOnlySelection);
+   if(!current){
+     beginOrderedDice();
+     return;
+   }
+
+   botThinking=true;
+   setStatus(`Компьютер (${player().name}) ходит на ${stepsNow()}…`);
+   await new Promise(r=>setTimeout(r,420));
+
+   if(!isBotTurn()||g.selected==null){
+     botThinking=false;
+     return;
+   }
+
+   preview=current;
+   resetCellClasses();
+   renderPieces();
+   await new Promise(r=>setTimeout(r,260));
+   preview=null;
+
+   await execute(choice.pc,current);
+   botThinking=false;
+   consume();
+ },delay);
+}
+
+function scheduleBotRoll(delay=720){
+ if(!isBotTurn()||!g||g.rolled||animating)return;
+ if(botTimer)clearTimeout(botTimer);
+ botTimer=setTimeout(()=>{
+   botTimer=null;
+   if(!isBotTurn()||!g||g.rolled||animating)return;
+   $("#roll").disabled=true;
+   setStatus(`Компьютер (${player().name}) бросает кости…`);
+   const r=[1+Math.floor(Math.random()*6),1+Math.floor(Math.random()*6)];
+   applyRollValues(r,false);
+ },delay);
+}
+
 async function capture(pc, captorSide){
+  sfxCapture();
   const pl=g.players[pc.owner];
   const p=pos(pc,pl);
   const el=svg.querySelector(`[data-id="${pc.id}"]`);
@@ -793,7 +1054,9 @@ async function pushTrapFrom(side,idx){
    if(ownAt(exit,occ.owner))return false;
    const enemy=enemyAt(exit,occ.owner);
    if(enemy)await capture(enemy,g.players[occ.owner].id);
-   await animate(occ,[TRACK[exit]],420,"fly");
+   const start=TRAP[side][occ.trap],end=TRACK[exit],control=trapCurveControl(side,start,end);
+   sfxArrow();
+   await animateBezier(occ,start,control,end,500,"trap");
    occ.state="track";
    occ.track=exit;
    occ.trap=0;
@@ -884,7 +1147,14 @@ function restoreAfterGiftSix(){
 function finishTurn(){
  // Победа проверяется и после обычного хода, и после переданной шестёрки.
  if(player().pieces.every(p=>p.state==="home")){
-   setStatus(`${player().name} победил! Проигравший выполняет: ${g.forfeit || "желание с колеса"}.`);
+   cancelBotTimer();
+   if(gameMode==="bot"){
+     setStatus(isBotTurn()
+       ? `Компьютер (${player().name}) победил. Попробуйте реванш!`
+       : `Вы победили! Все пять фишек в Домике.`);
+   }else{
+     setStatus(`${player().name} победил! Проигравший выполняет: ${g.forfeit || "желание с колеса"}.`);
+   }
    $("#roll").disabled=true;
    yandexGameplayStop();
    return;
@@ -907,7 +1177,7 @@ function finishTurn(){
  animating=false;
  clearDice();
 
- if(!extra)g.turn=(g.turn+1)%g.players.length;
+ if(!extra)g.turn=nextActiveSeat(g.turn);
  updateUI();
  renderPieces();
 
@@ -915,11 +1185,21 @@ function finishTurn(){
  if(onlineActive()){
    rollBtn.disabled=true;
    requestAnimationFrame(()=>window.MondavoshkaOnline?.refreshControls());
+ }else if(isBotTurn()){
+   rollBtn.disabled=true;
  }else{
    rollBtn.disabled=false;
-   requestAnimationFrame(()=>{if(g&&!g.rolled&&!animating)rollBtn.disabled=false;});
+   requestAnimationFrame(()=>{if(g&&!g.rolled&&!animating&&!isBotTurn())rollBtn.disabled=false;});
  }
- setStatus(extra ? "Куш — бросайте ещё раз." : "Бросьте две кости.");
+
+ if(isBotTurn()){
+   setStatus(extra
+     ? `У компьютера (${player().name}) куш — он бросает ещё раз.`
+     : `Ход компьютера (${player().name}).`);
+   scheduleBotRoll(extra?520:760);
+ }else{
+   setStatus(extra ? "Куш — бросайте ещё раз." : (gameMode==="bot" ? "Ваш ход. Бросьте две кости." : "Бросьте две кости."));
+ }
 }
 
 function clearDice(){
@@ -939,6 +1219,10 @@ function resetCellClasses(){svg.querySelectorAll(".cell").forEach(e=>e.setAttrib
 function updatePenaltyCard(){
  const el=$("#penaltyText");
  if(!el) return;
+ if(gameMode==="bot"){
+   el.textContent="Игра против компьютера — колесо желаний не используется.";
+   return;
+ }
  el.textContent=(g&&g.forfeit) ? g.forfeit : (selectedWish || "Определится колесом фортуны перед игрой");
 }
 
@@ -1059,6 +1343,78 @@ function ensureAudio(){
  if(audioCtx.state==="suspended") audioCtx.resume();
  return audioCtx;
 }
+
+function sfxTone(freq=220,duration=.08,volume=.05,type="sine",endFreq=null,delay=0){
+ if(!sfxEnabled)return;
+ const ctx=ensureAudio();if(!ctx)return;
+ const now=ctx.currentTime+Math.max(0,delay);
+ const osc=ctx.createOscillator(),gain=ctx.createGain(),filter=ctx.createBiquadFilter();
+ osc.type=type;
+ osc.frequency.setValueAtTime(Math.max(30,freq),now);
+ if(endFreq!=null)osc.frequency.exponentialRampToValueAtTime(Math.max(30,endFreq),now+duration);
+ filter.type="lowpass";filter.frequency.setValueAtTime(2200,now);
+ gain.gain.setValueAtTime(.0001,now);
+ gain.gain.exponentialRampToValueAtTime(Math.max(.0002,volume),now+.008);
+ gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
+ osc.connect(filter);filter.connect(gain);gain.connect(ctx.destination);
+ osc.start(now);osc.stop(now+duration+.03);
+}
+function sfxNoise(duration=.08,volume=.035,cutoff=1500,delay=0){
+ if(!sfxEnabled)return;
+ const ctx=ensureAudio();if(!ctx)return;
+ const rate=ctx.sampleRate,len=Math.max(1,Math.floor(rate*duration));
+ const buf=ctx.createBuffer(1,len,rate),data=buf.getChannelData(0);
+ for(let i=0;i<len;i++)data[i]=(Math.random()*2-1)*(1-i/len);
+ const src=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain();
+ src.buffer=buf;filter.type="lowpass";filter.frequency.value=cutoff;
+ const now=ctx.currentTime+Math.max(0,delay);
+ gain.gain.setValueAtTime(Math.max(.0002,volume),now);
+ gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
+ src.connect(filter);filter.connect(gain);gain.connect(ctx.destination);
+ src.start(now);src.stop(now+duration+.02);
+}
+function sfxDiceRoll(){
+ if(!sfxEnabled)return;
+ for(let i=0;i<8;i++){
+   const d=i*.072;
+   sfxTone(270+Math.random()*220,.045,.032,"square",150+Math.random()*120,d);
+   sfxNoise(.035,.018,1250+Math.random()*800,d);
+ }
+ sfxTone(150,.11,.05,"triangle",90,.56);
+}
+function sfxStep(){
+ if(!sfxEnabled)return;
+ sfxTone(165+Math.random()*35,.055,.026,"triangle",105,.0);
+ sfxNoise(.035,.012,850,.0);
+}
+function sfxCapture(){
+ if(!sfxEnabled)return;
+ sfxTone(105,.18,.075,"sawtooth",48,0);
+ sfxNoise(.16,.07,1100,0);
+ sfxTone(310,.11,.035,"square",120,.035);
+}
+function sfxTrap(){
+ if(!sfxEnabled)return;
+ sfxTone(230,.30,.07,"sine",58,0);
+ sfxNoise(.13,.04,650,.08);
+ sfxTone(72,.22,.05,"triangle",48,.13);
+}
+function sfxArrow(){
+ if(!sfxEnabled)return;
+ sfxNoise(.42,.035,2100,0);
+ sfxTone(180,.42,.04,"sine",620,0);
+ sfxTone(360,.30,.018,"triangle",860,.08);
+}
+function toggleSfx(){
+ sfxEnabled=!sfxEnabled;
+ updateSfxButton();
+ if(sfxEnabled)sfxTone(420,.07,.03,"triangle",620);
+}
+function updateSfxButton(){
+ const b=$("#sfxToggle");
+ if(b)b.textContent=sfxEnabled?"🔊 Звуки: вкл":"🔇 Звуки: выкл";
+}
+
 function pluck(freq,duration=.55,volume=.035,type="triangle"){
  const ctx=ensureAudio(); if(!ctx) return;
  const now=ctx.currentTime;
@@ -1136,18 +1492,30 @@ document.addEventListener("keydown",unlockMusicOnce,{once:false});
 
 function updateUI(){
  let p=player();
- $("#player").textContent=p.name;
+ $("#player").textContent=gameMode==="bot"
+   ? (isBotTurn()?`Компьютер — ${p.name}`:`Вы — ${p.name}`)
+   : playerLabel(p);
  $("#player").style.color=p.id==="red"?"#c51c29":p.id==="blue"?"#007e92":p.id==="black"?"#111":"#164b8c";
  const order=$("#turnOrder");
- if(order) order.textContent=g.players.map(x=>x.name).join(" → ")+" → "+g.players[0].name;
+ if(order) order.textContent=g.players.map(x=>`${playerLabel(x)}${x.eliminated?" (выбыл)":""}`).join(" → ");
+ const you=$("#youAre");
+ if(you){
+   if(gameMode==="online"&&window.MondavoshkaOnline?.active){
+     const seat=window.MondavoshkaOnline.seat;
+     const mine=g.players[seat];
+     if(mine){you.hidden=false;you.textContent=`Вы играете: ${mine.playerName||window.MondavoshkaOnline.name||"Игрок"} — ${mine.name}`;}
+     else you.hidden=true;
+   }else you.hidden=true;
+ }
 }
 function setStatus(s){$("#status").textContent=s}
 function closeGameMenus(){
-  ["#mainMenu","#localModal","#onlineCreateModal","#onlineJoinModal","#onlineLobbyModal","#wheelModal"].forEach(sel=>{
+  ["#mainMenu","#localModal","#botModal","#randomOnlineModal","#onlineCreateModal","#onlineJoinModal","#onlineLobbyModal","#wheelModal"].forEach(sel=>{
     const el=$(sel); if(el) el.classList.remove("show");
   });
 }
 function showMainMenu(){
+  cancelBotTimer();
   yandexGameplayStop();
   if(window.MondavoshkaOnline?.active) window.MondavoshkaOnline.leave(false);
   closeGameMenus();
@@ -1159,6 +1527,14 @@ function showMainMenu(){
 $("#playLocal").onclick=()=>{
   closeGameMenus();
   $("#localModal").classList.add("show");
+};
+$("#playBot").onclick=()=>{
+  closeGameMenus();
+  $("#botModal").classList.add("show");
+};
+$("#startBot").onclick=()=>{
+  closeGameMenus();
+  startBotGame(Number($("#botCount").value)||1);
 };
 $("#createOnline").onclick=()=>{
   closeGameMenus();
@@ -1177,6 +1553,8 @@ $("#beginGame").onclick=()=>{
  else newGame(pendingPlayerCount,selectedWish);
 };
 $("#musicToggle").onclick=toggleMusic;
+$("#sfxToggle").onclick=toggleSfx;
+updateSfxButton();
 $("#newGame").onclick=showMainMenu;
 $("#roll").onclick=roll;
 dice.forEach((b,i)=>b.onclick=()=>selectDie(i));
@@ -1189,7 +1567,7 @@ drawBoard();
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden){
     yandexGameplayStop();
-  }else if(g && !$("#mainMenu").classList.contains("show") && !$("#localModal").classList.contains("show") && !$("#onlineCreateModal").classList.contains("show") && !$("#onlineJoinModal").classList.contains("show") && !$("#onlineLobbyModal").classList.contains("show") && !$("#wheelModal").classList.contains("show")){
+  }else if(g && !$("#mainMenu").classList.contains("show") && !$("#localModal").classList.contains("show") && !$("#botModal").classList.contains("show") && !$("#onlineCreateModal").classList.contains("show") && !$("#onlineJoinModal").classList.contains("show") && !$("#onlineLobbyModal").classList.contains("show") && !$("#wheelModal").classList.contains("show")){
     yandexGameplayStart();
   }
 });
