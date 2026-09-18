@@ -32,6 +32,90 @@
    if(!S.socket||S.socket.readyState!==WebSocket.OPEN)return false;
    S.socket.send(JSON.stringify(obj));return true;
  }
+ const chatBubbleTimers=new Map();
+
+ function setChatVisible(show){
+   const card=document.querySelector("#chatCard");
+   if(card)card.hidden=!show;
+   if(!show){
+     const input=document.querySelector("#chatInput");
+     if(input)input.value="";
+     document.querySelector("#chatBubbleLayer")?.replaceChildren();
+     for(const t of chatBubbleTimers.values())clearTimeout(t);
+     chatBubbleTimers.clear();
+   }
+ }
+
+ function cleanChatText(value){
+   return String(value||"").replace(/[\u0000-\u001f\u007f]/g," ")
+     .replace(/\s+/g," ").trim().slice(0,80);
+ }
+
+ function chatPlacement(seat){
+   const p=S.players.find(x=>x.seat===seat);
+   const c=String(p?.color||"").toLowerCase();
+   if(c.includes("крас"))return "chatBubbleBottom";
+   if(c.includes("чёр")||c.includes("чер"))return "chatBubbleLeft";
+   if(c.includes("син"))return "chatBubbleTop";
+   if(c.includes("бело"))return "chatBubbleRight";
+   return ["chatBubbleBottom","chatBubbleLeft","chatBubbleTop","chatBubbleRight"][seat%4]||"chatBubbleBottom";
+ }
+
+ function chatAccent(seat){
+   const p=S.players.find(x=>x.seat===seat);
+   const c=String(p?.color||"").toLowerCase();
+   if(c.includes("крас"))return "#df2735";
+   if(c.includes("чёр")||c.includes("чер"))return "#262626";
+   if(c.includes("син")&&!c.includes("бело"))return "#008fa5";
+   if(c.includes("бело"))return "#3178b8";
+   return "#8b5b32";
+ }
+
+ function showChatBubble(m){
+   const layer=document.querySelector("#chatBubbleLayer");
+   if(!layer)return;
+   const seat=Number(m.seat);
+   const key=Number.isInteger(seat)?seat:String(m.name||"player");
+
+   const previous=layer.querySelector(`[data-chat-seat="${CSS.escape(String(key))}"]`);
+   if(previous)previous.remove();
+   if(chatBubbleTimers.has(key))clearTimeout(chatBubbleTimers.get(key));
+
+   const bubble=document.createElement("div");
+   bubble.className=`chatBubble ${chatPlacement(seat)}`;
+   bubble.dataset.chatSeat=String(key);
+   bubble.style.setProperty("--chat-accent",chatAccent(seat));
+
+   const who=document.createElement("b");
+   who.textContent=String(m.name||"Игрок").slice(0,24);
+
+   const msg=document.createElement("span");
+   msg.textContent=cleanChatText(m.text);
+
+   bubble.append(who,msg);
+   layer.appendChild(bubble);
+   requestAnimationFrame(()=>bubble.classList.add("show"));
+
+   const timer=setTimeout(()=>{
+     bubble.classList.remove("show");
+     bubble.classList.add("hide");
+     setTimeout(()=>bubble.remove(),260);
+     chatBubbleTimers.delete(key);
+   },4300);
+   chatBubbleTimers.set(key,timer);
+ }
+
+ function sendChat(text){
+   const clean=cleanChatText(text);
+   if(!clean||!S.active||!S.started||!S.connected)return false;
+   const ok=send({type:"chat_message",code:S.code,text:clean});
+   if(ok){
+     const input=document.querySelector("#chatInput");
+     if(input)input.value="";
+   }
+   return ok;
+ }
+
  function connect(){
    if(S.socket&&S.socket.readyState===WebSocket.OPEN)return Promise.resolve();
    if(S.socket&&S.socket.readyState===WebSocket.CONNECTING){
@@ -203,7 +287,7 @@
    S.manualClose=true;try{S.socket?.close()}catch{}
    clearTimeout(S.reconnectTimer);
    S.socket=null;S.active=false;S.connected=false;S.started=false;S.code=null;S.token=null;S.seat=null;S.host=false;S.players=[];S.actionSeat=null;S.pendingStart=false;S.lastVersion=0;S.randomSearching=false;S.matchMode="room";S.deadline=0;S.misses=[];S.matchPoints=[];
-   clearSession();gameMode="local";
+   clearSession();gameMode="local";setChatVisible(false);
    if(showMenu){closeGameMenus();document.querySelector("#mainMenu")?.classList.add("show")}
  }
  function forfeitAndLeave(){
@@ -227,7 +311,10 @@
    S.active=true;S.connected=true;S.randomSearching=false;S.matchMode=mode||S.matchMode;setRandomForm(false);
    S.code=m.code;S.token=m.token;S.seat=m.seat;S.host=!!m.host;S.players=m.players||[];S.started=!!m.started;S.lastVersion=m.version||0;S.deadline=m.deadline||0;S.misses=m.misses||[];S.matchPoints=m.matchPoints||[];
    saveSession();showLobby();
-   if(m.started&&m.state){S.started=true;startOnlineGameState(m.state,m.status||"Вы вернулись в онлайн-партию.");refreshControls()}
+   if(m.started&&m.state){
+     S.started=true;setChatVisible(true);
+     startOnlineGameState(m.state,m.status||"Вы вернулись в онлайн-партию.");refreshControls()
+   }
  }
  function handle(m){
    if(!m||typeof m.type!=="string")return;
@@ -248,8 +335,12 @@
    if(m.type==="room_created"||m.type==="room_joined"||m.type==="room_reconnected"){acceptRoomMessage(m,"room");return}
    if(m.type==="seat_update"){S.seat=m.seat;S.host=!!m.host;S.players=m.players||S.players;renderLobby();return}
    if(m.type==="room_update"){S.players=m.players||S.players;S.host=!!S.players.find(p=>p.seat===S.seat)?.host;S.started=!!m.started;applyTimer(m);applyAutoControl(m);renderLobby();return}
+   if(m.type==="chat_message"){
+     showChatBubble(m);
+     return;
+   }
    if(m.type==="game_started"){
-     S.started=true;S.actionSeat=null;S.pendingStart=false;S.lastVersion=m.version||S.lastVersion;
+     S.started=true;setChatVisible(true);S.actionSeat=null;S.pendingStart=false;S.lastVersion=m.version||S.lastVersion;
      if(Number.isInteger(m.seat))S.seat=m.seat;
      if(Array.isArray(m.players))S.players=m.players;
      startOnlineGameState(m.state,m.status||"Жребий цветов проведён. Начинается партия.");applyTimer(m);applyAutoControl(m);refreshControls();maybeContinueAutoTurn();return;
@@ -305,6 +396,28 @@
    }
  }
 
+ const chatInput=document.querySelector("#chatInput");
+ const sendChatBtn=document.querySelector("#sendChat");
+ if(sendChatBtn)sendChatBtn.onclick=()=>{
+   if(!sendChat(chatInput?.value||"")){
+     const hint=document.querySelector("#chatHint");
+     if(hint){hint.textContent="Нет связи с комнатой";setTimeout(()=>hint.textContent="Enter — отправить · максимум 80 знаков",1400)}
+   }
+ };
+ if(chatInput)chatInput.addEventListener("keydown",e=>{
+   if(e.key==="Enter"&&!e.shiftKey){
+     e.preventDefault();
+     sendChat(chatInput.value);
+   }
+ });
+ document.querySelectorAll("#quickEmoji [data-emoji]").forEach(btn=>{
+   btn.addEventListener("click",()=>{
+     const emoji=btn.dataset.emoji||"";
+     // Быстрые реакции отправляются одним нажатием.
+     sendChat(emoji);
+   });
+ });
+
  document.querySelector("#createOnline").onclick=()=>{closeGameMenus();document.querySelector("#onlineCreateModal").classList.add("show")};
  document.querySelector("#joinOnline").onclick=()=>{closeGameMenus();document.querySelector("#onlineJoinModal").classList.add("show")};
  document.querySelector("#randomOnline").onclick=()=>{closeGameMenus();setRandomForm(false);setRandomStatus("Введите имя и нажмите «Найти соперников».",false);document.querySelector("#randomOnlineModal").classList.add("show")};
@@ -323,6 +436,6 @@
 
  window.MondavoshkaOnline={
    get active(){return S.active},get connected(){return S.connected},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
-   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,wsUrl,playerTextBySeat
+   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,sendChat,wsUrl,playerTextBySeat
  };
 })();

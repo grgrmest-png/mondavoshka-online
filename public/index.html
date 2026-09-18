@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Мондавошка V40 — выход и завершение по 3 просрочкам</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Мондавошка V41 — онлайн-чат</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -62,7 +62,10 @@
     </header>
 <div class="mobileHint">📱 Мобильный режим: поле подстраивается под экран, зоны нажатия фишек увеличены.</div>
 <main>
-<section class="boardbox"><svg id="board" viewBox="0 0 1000 1000"></svg></section>
+<section class="boardbox">
+  <svg id="board" viewBox="0 0 1000 1000"></svg>
+  <div id="chatBubbleLayer" class="chatBubbleLayer" aria-live="polite"></div>
+</section>
 <aside>
 <div class="card turnCard"><small>Сейчас ходит</small><div id="player" class="player">—</div><div id="youAre" class="youAre" hidden></div><div id="status">Начните игру</div></div>
 <div class="card tripleKushCard" id="tripleKushCard" hidden>
@@ -82,6 +85,28 @@
 <div class="card dice">
 <button class="die" id="d0" disabled><span data-v="1"></span></button><button class="die" id="d1" disabled><span data-v="1"></span></button>
 <button id="roll" disabled>Бросить кости</button><button id="sum" disabled>Ход суммой не используется</button>
+</div>
+<div class="card chatCard" id="chatCard" hidden>
+  <div class="chatTitle">
+    <b>💬 Чат игроков</b>
+    <small>сообщение исчезнет с поля само</small>
+  </div>
+  <div class="quickEmoji" id="quickEmoji" aria-label="Быстрые смайлики">
+    <button type="button" data-emoji="😂" title="Смеюсь">😂</button>
+    <button type="button" data-emoji="😡" title="Злюсь">😡</button>
+    <button type="button" data-emoji="💩" title="Ловушка">💩</button>
+    <button type="button" data-emoji="👏" title="Браво">👏</button>
+    <button type="button" data-emoji="🔥" title="Огонь">🔥</button>
+    <button type="button" data-emoji="😎" title="Красиво">😎</button>
+    <button type="button" data-emoji="😭" title="Печаль">😭</button>
+    <button type="button" data-emoji="🤝" title="Респект">🤝</button>
+  </div>
+  <div class="chatInputRow">
+    <input id="chatInput" type="text" maxlength="80" autocomplete="off"
+           placeholder="Написать соперникам…">
+    <button id="sendChat" type="button" title="Отправить">➤</button>
+  </div>
+  <small class="chatHint" id="chatHint">Enter — отправить · максимум 80 знаков</small>
 </div>
 <div class="card direction"><b>Направление игры</b><div class="clockwise">↻ По часовой стрелке</div><div id="turnOrder" class="turnOrder">Красный → Чёрный → Синий → Бело-синий</div></div><div class="card"><b>Как ходить</b><p>Обычно сначала играется большая кость, затем меньшая. Внутри ловушки порядок свободный. Куш (дубль) позволяет сбить фишку в углу. После полного круга фишка сразу поворачивает на внутреннюю дорожку Домика и идёт по ней клетками.</p></div>
 <div class="card penaltyCard">

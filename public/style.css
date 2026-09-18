@@ -657,3 +657,157 @@ button{-webkit-tap-highlight-color:transparent}
   #exitGame{grid-column:1/-1;min-height:42px}
   .exitGameDialog{max-width:100%}
 }
+
+
+/* ==========================================================
+   V41 — онлайн-чат и всплывающие облака
+   ========================================================== */
+.boardbox{position:relative}
+.chatBubbleLayer{
+  position:absolute;
+  inset:0;
+  z-index:25;
+  pointer-events:none;
+  overflow:hidden;
+}
+.chatBubble{
+  --chat-accent:#8b5b32;
+  position:absolute;
+  width:max-content;
+  max-width:38%;
+  min-width:118px;
+  padding:9px 12px 10px;
+  border:3px solid var(--chat-accent);
+  border-radius:17px;
+  color:#302016;
+  background:rgba(255,247,225,.97);
+  box-shadow:0 7px 18px #0007, inset 0 1px 0 #fff;
+  opacity:0;
+  transform:scale(.82) translateY(8px);
+  transition:opacity .18s ease,transform .22s cubic-bezier(.2,.8,.25,1);
+  text-align:left;
+  line-height:1.16;
+  filter:drop-shadow(0 2px 0 #fff6);
+}
+.chatBubble::after{
+  content:"";
+  position:absolute;
+  width:14px;height:14px;
+  background:rgba(255,247,225,.97);
+  border-right:3px solid var(--chat-accent);
+  border-bottom:3px solid var(--chat-accent);
+  transform:rotate(45deg);
+}
+.chatBubble.show{opacity:1;transform:scale(1) translateY(0)}
+.chatBubble.hide{opacity:0;transform:scale(.9) translateY(-6px)}
+.chatBubble b{
+  display:block;
+  margin-bottom:3px;
+  color:var(--chat-accent);
+  font-size:12px;
+  line-height:1.1;
+}
+.chatBubble span{
+  display:block;
+  font-weight:800;
+  font-size:clamp(13px,1.45vw,20px);
+  overflow-wrap:anywhere;
+}
+.chatBubbleTop{top:7%;left:50%;transform-origin:50% 0}
+.chatBubbleTop::after{left:50%;bottom:-9px;margin-left:-8px}
+.chatBubbleBottom{bottom:7%;left:50%;transform-origin:50% 100%}
+.chatBubbleBottom::after{left:50%;top:-9px;margin-left:-8px;transform:rotate(225deg)}
+.chatBubbleLeft{left:6%;top:50%;transform-origin:0 50%}
+.chatBubbleLeft::after{right:-9px;top:50%;margin-top:-8px;transform:rotate(-45deg)}
+.chatBubbleRight{right:6%;top:50%;transform-origin:100% 50%}
+.chatBubbleRight::after{left:-9px;top:50%;margin-top:-8px;transform:rotate(135deg)}
+
+.chatCard{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.chatCard[hidden]{display:none!important}
+.chatTitle{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:8px;
+}
+.chatTitle small{font-size:10px;opacity:.72;text-align:right}
+.quickEmoji{
+  display:grid;
+  grid-template-columns:repeat(8,1fr);
+  gap:4px;
+}
+.quickEmoji button{
+  min-width:0;
+  padding:5px 2px;
+  border-width:1px;
+  border-radius:8px;
+  font-size:20px;
+  line-height:1;
+  background:#ffe5b8;
+}
+.quickEmoji button:hover{transform:translateY(-1px);filter:brightness(1.06)}
+.chatInputRow{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 48px;
+  gap:6px;
+}
+#chatInput{
+  width:100%;
+  min-width:0;
+  height:42px;
+  padding:8px 10px;
+  border:2px solid #5a3922;
+  border-radius:9px;
+  background:#fff8e8;
+  color:#302016;
+  font:700 14px Arial,sans-serif;
+  outline:none;
+}
+#chatInput:focus{
+  border-color:#2189b0;
+  box-shadow:0 0 0 3px #24a6d833;
+}
+#sendChat{
+  min-width:0;
+  padding:5px;
+  font-size:22px;
+  background:#d9f0d7;
+}
+.chatHint{opacity:.72;font-size:10px}
+
+@media(max-width:700px){
+  .chatCard{order:6;grid-column:1/-1}
+  .direction{order:7}
+  .penaltyCard{order:8}
+  .legend{order:10}
+  .quickEmoji{grid-template-columns:repeat(8,1fr);gap:3px}
+  .quickEmoji button{min-height:40px;padding:4px 1px;font-size:19px}
+  #chatInput{font-size:16px;height:46px}
+  #sendChat{height:46px}
+  .chatBubble{max-width:46%;min-width:92px;padding:7px 9px;border-width:2px}
+  .chatBubble b{font-size:9px}
+  .chatBubble span{font-size:13px}
+  .chatBubble::after{width:11px;height:11px;border-width:2px}
+  .chatBubbleTop{top:5%}
+  .chatBubbleBottom{bottom:5%}
+  .chatBubbleLeft{left:3%}
+  .chatBubbleRight{right:3%}
+}
+
+@media(max-width:390px){
+  .quickEmoji{grid-template-columns:repeat(4,1fr)}
+  .chatTitle small{display:none}
+}
+
+@media(orientation:landscape) and (max-height:650px) and (max-width:1000px){
+  .chatCard{order:6;grid-column:1/-1}
+  .quickEmoji{grid-template-columns:repeat(8,1fr)}
+  .quickEmoji button{min-height:32px;font-size:17px;padding:2px}
+  #chatInput{height:36px;font-size:14px}
+  #sendChat{height:36px}
+  .chatHint,.chatTitle small{display:none}
+}
