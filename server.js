@@ -101,7 +101,9 @@ function onMessage(ws,m){
    if(room.actionSeat!==p.seat)return err(ws,"Это состояние может отправить только игрок, который сейчас делает ход.");
    if(!validateState(room,m.state))return err(ws,"Сервер отклонил некорректное состояние игры.");
    room.state=m.state;room.status=String(m.status||"").slice(0,500);room.version++;
-   if(!room.state.rolled)room.actionSeat=null;
+   // Активное право действия следует за state.turn, пока текущий бросок не завершён.
+   // Это нужно, в частности, для передачи шестёрки владельцу пленника при выкупе.
+   room.actionSeat=room.state.rolled ? room.state.turn : null;
    broadcast(room,{type:"state_sync",state:room.state,status:room.status,actionSeat:room.actionSeat,version:room.version});return;
  }
 }
