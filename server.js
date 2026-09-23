@@ -14,7 +14,20 @@ const PREMIUM_PRODUCTS={
  skin_real_madrid:"club_real_madrid",
  skin_bayern:"club_bayern",
  skin_manchester_city:"club_manchester_city",
- skin_liverpool:"club_liverpool"
+ skin_liverpool:"club_liverpool",
+
+ skin_country_russia:"country_russia",
+ skin_country_brazil:"country_brazil",
+ skin_country_argentina:"country_argentina",
+ skin_country_france:"country_france",
+ skin_country_germany:"country_germany",
+ skin_country_spain:"country_spain",
+ skin_country_italy:"country_italy",
+ skin_country_japan:"country_japan",
+ skin_country_korea:"country_korea",
+ skin_country_usa:"country_usa",
+ skin_country_kazakhstan:"country_kazakhstan",
+ skin_country_china:"country_china"
 };
 const GUID="258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -615,4 +628,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V43: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V47: http://localhost:${PORT}`));
