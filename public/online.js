@@ -411,7 +411,13 @@
    }
    if(m.type==="roll_result"){
      if((m.version||0)<S.lastVersion)return;
-     S.actionSeat=m.seat;S.lastVersion=Math.max(S.lastVersion,m.version||0);applyRollValues(m.dice,true);return;
+     S.actionSeat=m.seat;S.lastVersion=Math.max(S.lastVersion,m.version||0);
+     applyRollValues(m.dice,true,{
+       tripleKush:m.tripleKush===true,
+       kushStreakCount:Number(m.kushStreakCount)||0,
+       kushStreakSeat:Number.isInteger(m.kushStreakSeat)?m.kushStreakSeat:null
+     });
+     return;
    }
    if(m.type==="state_sync"){
      if((m.version||0)<S.lastVersion)return;
@@ -425,7 +431,11 @@
      S.actionSeat=m.seat;
      if(m.state)applyOnlineSnapshot(m.state,m.status||"Время истекло — система делает ход.");
      applyTimer(m);applyAutoControl(m);refreshControls();
-     if(Array.isArray(m.dice))applyRollValues(m.dice,true);
+     if(Array.isArray(m.dice))applyRollValues(m.dice,true,{
+       tripleKush:m.tripleKush===true,
+       kushStreakCount:Number(m.kushStreakCount)||0,
+       kushStreakSeat:Number.isInteger(m.kushStreakSeat)?m.kushStreakSeat:null
+     });
      else maybeContinueAutoTurn();
      return;
    }

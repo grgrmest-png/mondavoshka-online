@@ -501,7 +501,7 @@ function roll(){
  const r=[1+Math.floor(Math.random()*6),1+Math.floor(Math.random()*6)];
  applyRollValues(r,false);
 }
-function applyRollValues(r,fromNetwork=false){
+function applyRollValues(r,fromNetwork=false,networkMeta=null){
  if(animating||!g||g.rolled)return;
  animating=true;
  $("#roll").disabled=true;
@@ -528,7 +528,8 @@ function applyRollValues(r,fromNetwork=false){
    g.double=g.d[0]===g.d[1];
    g.sum=false;
    g.selected=null;
-   registerDoubleStreak();
+   if(fromNetwork)applyServerKushMeta(networkMeta||{});
+   else registerDoubleStreak();
    dice.forEach((b,i)=>{
      b.classList.remove("rolling");
      b.querySelector("span").dataset.v=g.d[i];
@@ -550,7 +551,7 @@ function beginOrderedDice(){
    preview=null;
    resetCellClasses();
    renderPieces();
-   setStatus("🔥 ТРИ КУША ПОДРЯД! Выберите зелёную фишку из базы или с поля и отправьте её прямо в Домик. Пятую фишку этим бонусом поставить нельзя.");
+   setStatus("🔥 ТРИ КУША ПОДРЯД! СНАЧАЛА выберите одну зелёную фишку — она сразу отправится в Домик. После выбора вы разыграете третий куш обычным способом.");
    if(isBotTurn()&&canControlBot())scheduleTripleKushBonus();
    return;
  }
@@ -847,6 +848,30 @@ function updateTripleKushCard(){
    text.textContent="Три куша подряд! Выберите зелёную фишку из базы или с поля — она сразу отправится в Домик. Пятую фишку этим бонусом ставить нельзя.";
  }
 }
+function activateTripleKushBonus(){
+ if(!g)return false;
+
+ // После третьего куша серия сразу считается отработанной.
+ g.doubleStreak=0;
+ g.doubleStreakSeat=null;
+
+ const eligible=tripleKushEligible(g.turn);
+ if(!eligible.length){
+   g.tripleKushPending=false;
+   updateTripleKushCard();
+   if(tripleKushHomeCount(g.turn)>=4){
+     setStatus("🔥 Три куша подряд! Но бонус нельзя использовать для пятой, последней фишки. Продолжаем обычный ход.");
+   }else{
+     setStatus("🔥 Три куша подряд! Но сейчас нет фишки в базе или на поле, которую можно отправить в Домик.");
+   }
+   return false;
+ }
+
+ g.tripleKushPending=true;
+ updateTripleKushCard();
+ return true;
+}
+
 function registerDoubleStreak(){
  if(!g||g.forcedSix)return false;
 
@@ -865,26 +890,27 @@ function registerDoubleStreak(){
  }
 
  if(g.doubleStreak<3)return false;
+ return activateTripleKushBonus();
+}
 
- // Тройка кушей отработала. Следующая серия начинается заново.
- g.doubleStreak=0;
- g.doubleStreakSeat=null;
+// В онлайн-игре серия кушей считается сервером.
+// Так третий куш не зависит от задержек state_sync между браузерами.
+function applyServerKushMeta(meta){
+ if(!g||!meta)return false;
 
- const eligible=tripleKushEligible(g.turn);
- if(!eligible.length){
-   g.tripleKushPending=false;
-   updateTripleKushCard();
-   if(tripleKushHomeCount(g.turn)>=4){
-     setStatus("Три куша подряд! Но бонус нельзя использовать для пятой, последней фишки. Продолжаем обычный ход.");
-   }else{
-     setStatus("Три куша подряд! Но сейчас нет фишки в базе или на поле, которую можно отправить в Домик.");
-   }
-   return false;
+ const count=Math.max(0,Math.min(2,Number(meta.kushStreakCount)||0));
+ g.doubleStreak=count;
+ g.doubleStreakSeat=Number.isInteger(meta.kushStreakSeat)?meta.kushStreakSeat:(count?g.turn:null);
+
+ if(meta.tripleKush===true){
+   return activateTripleKushBonus();
  }
 
- g.tripleKushPending=true;
- updateTripleKushCard();
- return true;
+ if(!g.double){
+   g.doubleStreak=0;
+   g.doubleStreakSeat=null;
+ }
+ return false;
 }
 async function claimTripleKushBonus(pc){
  if(!g?.tripleKushPending||pc.owner!==g.turn)return false;
