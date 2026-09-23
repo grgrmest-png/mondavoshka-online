@@ -18,7 +18,7 @@
  function setErr(id,text){const e=document.querySelector(id);if(e)e.textContent=text||""}
  function profilePayload(){
    const p=window.MondavoshkaProfile?.publicProfile?.()||{};
-   return {profileId:p.id||null,skinId:p.skinId||"default",rating:Number(p.rating)||0};
+   return {profileId:p.id||null,skinId:p.skinId||"default",avatar:p.avatar||"animal:tiger",rating:Number(p.rating)||0};
  }
  function playerTextBySeat(seat){
    const p=S.players.find(x=>x.seat===seat);const color=p?.color||g?.players?.[seat]?.name||colors[seat]?.name||"Игрок";
@@ -515,7 +515,7 @@
  document.querySelector("#newGame").onclick=()=>{if(S.randomSearching&&!S.active)cancelRandom(true);else if(S.active)leave(true);else oldShowMain()};
 
  window.MondavoshkaOnline={
-   get active(){return S.active},get connected(){return S.connected},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
+   get active(){return S.active},get connected(){return S.connected},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get misses(){return S.misses},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
    canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,sendChat,wsUrl,playerTextBySeat
  };
 })();

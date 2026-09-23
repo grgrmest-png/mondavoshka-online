@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Мондавошка V47 — фишки стран за реальные деньги</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Партис — народная игра «Мандавошка»</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -52,7 +52,7 @@
 <body>
 <div class="app">
 <header>
-      <div><h1>МОНДАВОШКА</h1><p>Векторное поле • точные клетки • подсказка маршрута</p></div>
+      <div><h1>ПАРТИС</h1><p>Народное название — «Мандавошка» • онлайн-настольная игра</p></div>
       <div class="headerActions">
         <button id="musicToggle" type="button">♫ Музыка: вкл</button>
         <button id="sfxToggle" type="button">🔊 Звуки: вкл</button>
@@ -71,6 +71,7 @@
   <div id="seatBadgeLeft" class="seatBadge seatBadgeLeft" hidden></div>
 
   <div id="chatBubbleLayer" class="chatBubbleLayer" aria-live="polite"></div>
+  <div id="gameEventLayer" class="gameEventLayer" aria-live="polite"></div>
 </section>
 <aside>
 <div class="card turnCard"><small>Сейчас ходит</small><div id="player" class="player">—</div><div id="youAre" class="youAre" hidden></div><div id="status">Начните игру</div></div>
@@ -125,13 +126,13 @@
       <div class="dialog mainMenuDialog hubDialog">
         <div class="hubHeader">
           <div>
-            <div class="menuLogo">МОНДАВОШКА</div>
-            <div class="menuSubtitle">Онлайн-рейтинг • быстрые партии • коллекция фишек</div>
+            <div class="menuLogo">ПАРТИС</div>
+            <div class="menuSubtitle">Народное название — «Мандавошка» · онлайн-рейтинг · быстрые партии</div>
           </div>
           <div class="profilePanel">
-            <div class="profileAvatar">М</div>
-            <div class="profileInfo"><b id="profileName">Игрок</b><small>🏆 Рейтинг: <strong id="profileRating">0</strong> · 💰 Баланс: <strong id="profileBalance">0</strong></small><small>Победы: <strong id="profileWins">0</strong></small></div>
-            <button id="profileLogin" type="button">Войти в Яндекс</button>
+            <button id="profileAvatarButton" class="profileAvatar profileAvatarButton" type="button" title="Открыть профиль"><span>🐯</span></button>
+            <div class="profileInfo"><b id="profileName">Игрок</b><small>🏆 Рейтинг: <strong id="profileRating">0</strong> · 💰 Баланс: <strong id="profileBalance">0</strong></small><small>Победы: <strong id="profileWins">0</strong> · Игры: <strong id="profileGames">0</strong></small></div>
+            <div class="profilePanelActions"><button id="openProfile" type="button">Профиль</button><button id="profileLogin" type="button">Войти в Яндекс</button></div>
           </div>
         </div>
         <div class="hubBody">
@@ -144,7 +145,9 @@
           </div>
           <div class="hubSide">
             <button id="openRating" class="hubFeature" type="button"><b>🏆 Рейтинг игроков</b><span>За каждую фишку в Домике +20 очков</span></button>
-            <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин фишек</b><span>Цвета и фишки стран за игровые очки</span></button>
+            <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин</b><span>Фишки, столы, кубики и премиум-наборы</span></button>
+            <button id="openTutorial" class="hubFeature" type="button"><b>🎓 Обучение</b><span>Коротко пройти правила перед первой партией</span></button>
+            <div class="hubRules howToPlayShort"><b>Как играть — коротко</b><span>🎲 Ходите двумя костями по отдельности. 6 выводит фишку из Базы. Сделайте один полный круг и заведите все 5 фишек в Домик. Фишку соперника можно взять в плен. Куш даёт дополнительный бросок; 3 куша подряд дают бонусную фишку в Домик. В ловушке нужно пройти 1 → 3 → 6.</span></div>
             <div class="hubRules"><b>Онлайн-правило времени</b><span>Можно играть с таймером 25 секунд или без него. При таймере: 3 просрочки — поражение.</span></div>
           </div>
         </div>
@@ -153,21 +156,45 @@
 
     <div class="modal" id="ratingModal">
       <div class="dialog ratingDialog">
-        <div class="modalTitleRow"><h2>🏆 Рейтинг Мондавошки</h2><button class="hubBack" type="button">← В меню</button></div>
+        <div class="modalTitleRow"><h2>🏆 Рейтинг Партис</h2><button class="hubBack" type="button">← В меню</button></div>
         <p>Каждая фишка, вошедшая во внутренний Домик в онлайн-партии, приносит <b>20 рейтинговых очков</b>. За одну игру можно заработать максимум <b>100</b>.</p>
         <div id="ratingList" class="ratingList"></div>
       </div>
     </div>
 
+    <div class="modal" id="profileModal">
+      <div class="dialog profileDialog">
+        <div class="modalTitleRow"><div><h2>👤 Профиль игрока</h2><p>Аватар, статистика, косметика и достижения.</p></div><button class="hubBack" type="button">← В меню</button></div>
+        <div class="profileHero">
+          <div id="profileModalAvatar" class="profileModalAvatar"><span>🐯</span></div>
+          <div><h3 id="profileModalName">Игрок</h3><p>Рейтинг <b id="profileModalRating">0</b> · Победы <b id="profileModalWins">0</b> · Игры <b id="profileModalGames">0</b></p><small id="profileCurrentCosmetics">Классический стол · стандартные кубики</small></div>
+        </div>
+        <h3>Выберите аватар</h3>
+        <div id="avatarChoices" class="avatarChoices"></div>
+        <div class="avatarUploadRow"><input id="avatarUpload" type="file" accept="image/*" hidden><button id="avatarUploadBtn" type="button">📷 Выбрать фото из галереи</button><small>Фото уменьшается до маленькой аватарки перед сохранением.</small></div>
+        <h3>🏅 Достижения</h3>
+        <div id="achievementGrid" class="achievementGrid"></div>
+      </div>
+    </div>
+
     <div class="modal" id="shopModal">
       <div class="dialog shopDialog">
-        <div class="modalTitleRow"><div><h2>🛍 Магазин фишек</h2><p>Рейтинг не уменьшается при покупке. Тратится только баланс заработанных очков.</p></div><button class="hubBack" type="button">← В меню</button></div>
+        <div class="modalTitleRow"><div><h2>🛍 Магазин Партис</h2><p>Игровой рейтинг не уменьшается. За очки покупается косметика, премиум-фишки — через магазин платформы.</p></div><button class="hubBack" type="button">← В меню</button></div>
         <h3>Цветные фишки — 200 очков</h3>
         <div id="skinGrid" class="skinGrid"></div>
 
         <h3 class="countryShopTitle">🌍 Фишки стран — премиум</h3>
         <p class="countryShopNote">Покупаются за реальные деньги через магазин Яндекс Игр. Цена показывается из каталога.</p>
         <div id="countryGrid" class="skinGrid countryGrid"></div>
+
+        <h3>🪵 Игровые столы</h3>
+        <p class="countryShopNote">Меняют оформление вашего игрового поля. Соперники могут использовать свой стол.</p>
+        <div id="tableGrid" class="skinGrid cosmeticGrid"></div>
+
+        <h3>🎲 Наборы кубиков</h3>
+        <p class="countryShopNote">Меняют внешний вид костей на вашем устройстве.</p>
+        <div id="diceGrid" class="skinGrid cosmeticGrid"></div>
+
         <h3>Премиум-фишки футбольных клубов</h3>
         
         <div id="premiumGrid" class="skinGrid premiumGrid"></div>
@@ -302,6 +329,17 @@
       </div>
     </div>
 
+    <div class="modal" id="tutorialModal">
+      <div class="dialog tutorialDialog">
+        <div class="tutorialProgress"><span id="tutorialStepLabel">1 / 5</span><button id="closeTutorial" type="button">✕</button></div>
+        <div id="tutorialIcon" class="tutorialIcon">🎲</div>
+        <h2 id="tutorialTitle">Добро пожаловать в Партис</h2>
+        <p id="tutorialText"></p>
+        <div class="tutorialDots" id="tutorialDots"></div>
+        <div class="dialogActions"><button id="tutorialPrev" type="button">← Назад</button><button id="tutorialNext" type="button">Далее →</button></div>
+      </div>
+    </div>
+
     <div class="modal" id="exitGameModal">
       <div class="dialog exitGameDialog">
         <h2>Выйти из игры?</h2>
@@ -319,6 +357,7 @@
         <div class="victoryCup">🏆</div>
         <h2 id="victoryTitle">Победа!</h2>
         <p id="victorySubtitle"></p>
+        <div id="postMatchStats" class="postMatchStats"></div>
         <div class="dialogActions victoryActions">
           <button id="victoryMenu" type="button">Главное меню</button>
           <button id="victoryAgain" type="button">Начать новую игру</button>
