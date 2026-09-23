@@ -32,6 +32,7 @@ function json(res,status,obj){res.writeHead(status,cors({"content-type":"applica
 function readBody(req,limit=200000){return new Promise((resolve,reject)=>{let b="";req.on("data",c=>{b+=c;if(b.length>limit){reject(new Error("too large"));req.destroy()}});req.on("end",()=>resolve(b));req.on("error",reject)})}
 function safeName(x){return String(x||"Игрок").replace(/[<>\u0000-\u001f]/g,"").trim().slice(0,24)||"Игрок"}
 function safeChatText(x){return String(x||"").replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,80)}
+function timerEnabledValue(v){return !(v===false||v===0||v==="0"||String(v).toLowerCase()==="false"||String(v).toLowerCase()==="off")}
 function safeProfileId(x){return String(x||"").replace(/[^a-zA-Z0-9_.:-]/g,"").slice(0,120)}
 function safeSkin(x){const s=String(x||"default");return POINT_SKINS.has(s)||Object.values(PREMIUM_PRODUCTS).includes(s)?s:"default"}
 function getProfile(id,name=null,seed=null){
@@ -148,7 +149,7 @@ function token(){return crypto.randomBytes(18).toString("hex")}
 function roomColors(room){return COLOR_SETS[room.state?.players?.length||room.players.length]||COLOR_SETS[4]}
 function playerList(room){const cs=roomColors(room);return room.players.map(p=>({seat:p.seat,name:p.name,connected:p.bot?true:!!p.connected,bot:!!p.bot,host:!!p.host,color:cs[p.seat]||COLORS[p.seat],profileId:p.profileId||null,skinId:p.skinId||"default",rating:p.profileId?(profiles.get(p.profileId)?.rating||0):0,eliminated:!!room.state?.players?.[p.seat]?.eliminated,misses:room.misses?.[p.seat]||0})).sort((a,b)=>a.seat-b.seat)}
 function broadcast(room,obj){for(const p of room.players)if(p.connected&&p.ws)send(p.ws,obj)}
-function roomUpdate(room){broadcast(room,{type:"room_update",code:room.code,players:playerList(room),started:room.started,deadline:room.deadline||0,misses:room.misses||[],matchPoints:room.matchPoints||[],autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat})}
+function roomUpdate(room){broadcast(room,{type:"room_update",code:room.code,players:playerList(room),started:room.started,deadline:room.deadline||0,misses:room.misses||[],matchPoints:room.matchPoints||[],timerEnabled:room.timerEnabled!==false,chatHistory:room.chatHistory||[],autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat})}
 function err(ws,message){send(ws,{type:"error",message})}
 function attach(ws,p,room){p.ws=ws;p.connected=true;ws._room=room.code;ws._token=p.token;ws._seat=p.seat}
 function findFreeSeat(room){for(let s=0;s<4;s++)if(!room.players.some(p=>p.seat===s))return s;return -1}
@@ -166,9 +167,29 @@ function validateState(room,state,expected=room.players.length){
  return JSON.stringify(state).length<65000;
 }
 function queueSize(v){const n=Number(v);return Number.isInteger(n)&&n>=2&&n<=4?n:2}
-function queueEntries(size){return randomQueue.filter(e=>e.size===size&&!e.ws.destroyed&&!e.ws._room)}
-function notifyRandomQueue(size){const active=queueEntries(size);active.forEach((e,i)=>send(e.ws,{type:"random_waiting",size,waiting:active.length,position:i+1}))}
-function removeFromRandomQueue(ws,notify=true){let affected=new Set();for(let i=randomQueue.length-1;i>=0;i--){if(randomQueue[i].ws===ws){affected.add(randomQueue[i].size);randomQueue.splice(i,1)}}ws._randomQueued=false;ws._randomSize=null;if(notify)for(const size of affected)notifyRandomQueue(size)}
+function queueEntries(size,timerEnabled=true){return randomQueue.filter(e=>e.size===size&&e.timerEnabled===timerEnabled&&!e.ws.destroyed&&!e.ws._room)}
+function notifyRandomQueue(size,timerEnabled=true){
+ const active=queueEntries(size,timerEnabled);
+ active.forEach((e,i)=>send(e.ws,{type:"random_waiting",size,timerEnabled,waiting:active.length,position:i+1}));
+}
+function removeFromRandomQueue(ws,notify=true){
+ const affected=[];
+ for(let i=randomQueue.length-1;i>=0;i--){
+   if(randomQueue[i].ws===ws){
+     affected.push([randomQueue[i].size,randomQueue[i].timerEnabled]);
+     randomQueue.splice(i,1);
+   }
+ }
+ ws._randomQueued=false;ws._randomSize=null;ws._randomTimerEnabled=null;
+ if(notify){
+   const seen=new Set();
+   for(const [size,timerEnabled] of affected){
+     const key=`${size}:${timerEnabled}`;
+     if(seen.has(key))continue;
+     seen.add(key);notifyRandomQueue(size,timerEnabled);
+   }
+ }
+}
 function playerFromMessage(m,seat,host,ws){
  const profileId=safeProfileId(m.profileId);const p=profileId?getProfile(profileId,m.name||"Игрок",{rating:m.rating||0}):null;
  return {seat,name:safeName(m.name),token:token(),host,connected:true,ws,profileId:profileId||null,skinId:safeSkin(m.skinId||(p?.equipped)||"default")};
@@ -192,23 +213,27 @@ function stampPlayerNames(room,state){
  }
  return state;
 }
-function createRoomObject(code,players,random=false,targetSize=null){
+function createRoomObject(code,players,random=false,targetSize=null,timerEnabled=true){
  return {code,players,started:false,state:null,status:"",actionSeat:null,version:1,lastActive:Date.now(),random,targetSize,
-   deadline:0,misses:Array(players.length).fill(0),matchPoints:Array(players.length).fill(0),awardedHomes:Array(players.length).fill(0),gameOver:false,winnerSeat:null,autoSeat:null,autoControllerSeat:null};
+   timerEnabled:timerEnabled!==false,deadline:0,timeoutInProgress:false,
+   misses:Array(players.length).fill(0),matchPoints:Array(players.length).fill(0),awardedHomes:Array(players.length).fill(0),
+   chatHistory:[],gameOver:false,winnerSeat:null,autoSeat:null,autoControllerSeat:null};
 }
-function tryRandomMatch(size){
- const active=queueEntries(size);if(active.length<size){notifyRandomQueue(size);return}
+function tryRandomMatch(size,timerEnabled=true){
+ const active=queueEntries(size,timerEnabled);if(active.length<size){notifyRandomQueue(size,timerEnabled);return}
  const picked=active.slice(0,size);for(const e of picked)removeFromRandomQueue(e.ws,false);
  const code=roomCode();const players=picked.map((e,seat)=>playerFromMessage(e,seat,seat===0,e.ws));
- const room=createRoomObject(code,players,true,size);rooms.set(code,room);players.forEach(p=>attach(p.ws,p,room));
- players.forEach(p=>send(p.ws,{type:"random_matched",code,token:p.token,seat:p.seat,host:p.host,players:playerList(room),started:false,version:room.version,random:true,targetSize:size,misses:room.misses,matchPoints:room.matchPoints}));
- roomUpdate(room);notifyRandomQueue(size);
+ const room=createRoomObject(code,players,true,size,timerEnabled);rooms.set(code,room);players.forEach(p=>attach(p.ws,p,room));
+ players.forEach(p=>send(p.ws,{type:"random_matched",code,token:p.token,seat:p.seat,host:p.host,players:playerList(room),started:false,version:room.version,random:true,targetSize:size,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints}));
+ roomUpdate(room);notifyRandomQueue(size,timerEnabled);
 }
 function enqueueRandom(ws,m){
  if(ws._room)return err(ws,"Вы уже находитесь в комнате.");removeFromRandomQueue(ws,false);
- const size=queueSize(m.size),entry={ws,name:safeName(m.name),size,queuedAt:Date.now(),profileId:safeProfileId(m.profileId),skinId:safeSkin(m.skinId),rating:+m.rating||0};
- randomQueue.push(entry);ws._randomQueued=true;ws._randomSize=size;
- send(ws,{type:"random_waiting",size,waiting:queueEntries(size).length,position:queueEntries(size).length});tryRandomMatch(size);
+ const size=queueSize(m.size),timerEnabled=timerEnabledValue(m.timerEnabled);
+ const entry={ws,name:safeName(m.name),size,timerEnabled,queuedAt:Date.now(),profileId:safeProfileId(m.profileId),skinId:safeSkin(m.skinId),rating:+m.rating||0};
+ randomQueue.push(entry);ws._randomQueued=true;ws._randomSize=size;ws._randomTimerEnabled=timerEnabled;
+ const active=queueEntries(size,timerEnabled);
+ send(ws,{type:"random_waiting",size,timerEnabled,waiting:active.length,position:active.length});tryRandomMatch(size,timerEnabled);
 }
 function nextActiveSeat(state,from){
  for(let k=1;k<=state.players.length;k++){const s=(from+k)%state.players.length;if(!state.players[s]?.eliminated)return s}
@@ -220,8 +245,9 @@ function resetTurnState(state){
 }
 function startTurnTimer(room){
  if(!room.started||room.gameOver||!room.state)return;
- room.deadline=Date.now()+TURN_MS;
- broadcast(room,{type:"turn_timer",turn:room.state.turn,deadline:room.deadline,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});
+ room.timeoutInProgress=false;
+ room.deadline=room.timerEnabled===false?0:Date.now()+TURN_MS;
+ broadcast(room,{type:"turn_timer",turn:room.state.turn,deadline:room.deadline,timerEnabled:room.timerEnabled!==false,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});
 }
 function homeCount(state,seat){return state.players?.[seat]?.pieces?.filter(x=>x.state==="home").length||0}
 function awardHomePoints(room,state){
@@ -246,7 +272,7 @@ function finishMatch(room,winnerSeat,reason){
  room.version++;
  const winner=room.players.find(x=>x.seat===winnerSeat);
  room.status=reason||`Победил ${winner?.name||"игрок"} — ${roomColors(room)[winnerSeat]||""}.`;
- broadcast(room,{type:"match_over",winnerSeat,state:room.state,status:room.status,deadline:0,misses:room.misses,matchPoints:room.matchPoints,version:room.version,autoSeat:null,autoControllerSeat:null});
+ broadcast(room,{type:"match_over",winnerSeat,state:room.state,status:room.status,deadline:0,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints,version:room.version,autoSeat:null,autoControllerSeat:null});
 }
 
 function chooseAutoController(room,timedOutSeat){
@@ -317,6 +343,7 @@ function finishForcedLoss(room,loserSeat,reason,bonus=20){
    state:room.state,
    status:room.status,
    deadline:0,
+   timerEnabled:room.timerEnabled,
    misses:room.misses,
    matchPoints:room.matchPoints,
    version:room.version,
@@ -340,50 +367,57 @@ function beginTimeoutAutoplay(room,seat){
  const dice=[crypto.randomInt(1,7),crypto.randomInt(1,7)];
  room.version++;
  const rp=room.players.find(x=>x.seat===seat);
- room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Система автоматически делает ход (${room.misses[seat]}/${MAX_MISSES}).`;
+ room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Просрочка ${room.misses[seat]}/${MAX_MISSES}. Система автоматически делает один ход.`;
  broadcast(room,{
    type:"timeout_autoplay",seat,controllerSeat:controller.seat,dice,state:room.state,status:room.status,
-   deadline:0,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
+   deadline:0,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
    autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat
  });
  return true;
 }
 
 function timeoutTurn(room){
- if(!room.started||room.gameOver||!room.state||Date.now()<room.deadline)return;
- const seat=room.state.turn;
+ if(!room.started||room.gameOver||!room.state||room.timerEnabled===false||!room.deadline||Date.now()<room.deadline||room.timeoutInProgress)return;
 
+ // Одно истечение таймера = ровно одна просрочка.
+ room.timeoutInProgress=true;
+ room.deadline=0;
+
+ const seat=room.state.turn;
  if(room.state.players[seat]?.eliminated){
    room.state.turn=nextActiveSeat(room.state,seat);
    room.autoSeat=null;room.autoControllerSeat=null;room.actionSeat=null;
+   room.timeoutInProgress=false;
    startTurnTimer(room);return;
  }
 
  room.misses[seat]=(room.misses[seat]||0)+1;
+ const missesCount=room.misses[seat];
  const rp=room.players.find(x=>x.seat===seat);
 
- // 1-я и 2-я просрочка: система делает ход за игрока.
- if(room.misses[seat]<MAX_MISSES){
-   if(beginTimeoutAutoplay(room,seat))return;
-
-   // Если нет другого клиента для автохода — не зависаем.
+ // Только третья просрочка завершает партию.
+ if(missesCount>=MAX_MISSES){
    resetTurnState(room.state);
    room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;
-   room.state.turn=nextActiveSeat(room.state,seat);room.version++;
-   room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Автоход временно недоступен, очередь передана дальше.`;
-   broadcast(room,{
-     type:"turn_timeout",seat,missesCount:room.misses[seat],state:room.state,status:room.status,
-     deadline:0,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
-     autoSeat:null,autoControllerSeat:null
-   });
-   startTurnTimer(room);
+   finishForcedLoss(room,seat,"трижды не успел сделать ход и автоматически проиграл",20);
    return;
  }
 
- // 3-я просрочка: поражение игрока и НЕМЕДЛЕННОЕ завершение всей партии.
+ // Первая и вторая просрочки: один автоматический ход.
+ if(beginTimeoutAutoplay(room,seat))return;
+
+ // Если некому выполнить автоход, просто передаём очередь.
  resetTurnState(room.state);
  room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;
- finishForcedLoss(room,seat,"трижды не успел сделать ход и автоматически проиграл",20);
+ room.state.turn=nextActiveSeat(room.state,seat);room.version++;
+ room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Просрочка ${missesCount}/${MAX_MISSES}. Автоход временно недоступен, очередь передана дальше.`;
+ broadcast(room,{
+   type:"turn_timeout",seat,missesCount,state:room.state,status:room.status,
+   deadline:0,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
+   autoSeat:null,autoControllerSeat:null
+ });
+ room.timeoutInProgress=false;
+ startTurnTimer(room);
 }
 
 function onMessage(ws,m){
@@ -392,20 +426,20 @@ function onMessage(ws,m){
  if(m.type==="cancel_random"){removeFromRandomQueue(ws);send(ws,{type:"random_cancelled"});return}
  if(m.type==="create_room"){
    removeFromRandomQueue(ws);if(ws._room)return err(ws,"Вы уже находитесь в комнате.");
-   const code=roomCode(),p=playerFromMessage(m,0,true,ws),room=createRoomObject(code,[p]);rooms.set(code,room);attach(ws,p,room);
-   send(ws,{type:"room_created",code,token:p.token,seat:0,host:true,players:playerList(room),started:false,version:room.version,misses:room.misses,matchPoints:room.matchPoints});roomUpdate(room);return;
+   const code=roomCode(),p=playerFromMessage(m,0,true,ws),timerEnabled=timerEnabledValue(m.timerEnabled),room=createRoomObject(code,[p],false,null,timerEnabled);rooms.set(code,room);attach(ws,p,room);
+   send(ws,{type:"room_created",code,token:p.token,seat:0,host:true,players:playerList(room),started:false,version:room.version,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints});roomUpdate(room);return;
  }
  if(m.type==="join_room"){
    removeFromRandomQueue(ws);const code=String(m.code||""),room=rooms.get(code);if(!room)return err(ws,"Комната с таким кодом не найдена.");
    if(room.started)return err(ws,"Партия уже началась. Новые игроки войти не могут.");const seat=findFreeSeat(room);if(seat<0)return err(ws,"В комнате уже 4 игрока.");
    const p=playerFromMessage(m,seat,false,ws);room.players.push(p);room.misses.push(0);room.matchPoints.push(0);room.awardedHomes.push(0);room.lastActive=Date.now();attach(ws,p,room);
-   send(ws,{type:"room_joined",code,token:p.token,seat:p.seat,host:false,players:playerList(room),started:false,version:room.version,misses:room.misses,matchPoints:room.matchPoints});roomUpdate(room);return;
+   send(ws,{type:"room_joined",code,token:p.token,seat:p.seat,host:false,players:playerList(room),started:false,version:room.version,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints});roomUpdate(room);return;
  }
  if(m.type==="reconnect_room"){
    removeFromRandomQueue(ws);const room=rooms.get(String(m.code||""));if(!room)return err(ws,"Комната больше не существует.");
    const p=room.players.find(x=>x.token===m.token);if(!p)return err(ws,"Не удалось восстановить место игрока.");
    p.name=safeName(m.name||p.name);if(m.profileId)p.profileId=safeProfileId(m.profileId);if(m.skinId)p.skinId=safeSkin(m.skinId);attach(ws,p,room);room.lastActive=Date.now();
-   send(ws,{type:"room_reconnected",code:room.code,token:p.token,seat:p.seat,host:p.host,players:playerList(room),started:room.started,state:room.state,status:room.status,version:room.version,deadline:room.deadline,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});roomUpdate(room);return;
+   send(ws,{type:"room_reconnected",code:room.code,token:p.token,seat:p.seat,host:p.host,players:playerList(room),started:room.started,state:room.state,status:room.status,version:room.version,deadline:room.deadline,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});roomUpdate(room);return;
  }
  const room=rooms.get(String(m.code||ws._room||""));if(!room)return err(ws,"Комната не найдена.");
  const p=room.players.find(x=>x.token===ws._token);if(!p)return err(ws,"Игрок не найден в комнате.");room.lastActive=Date.now();
@@ -432,13 +466,10 @@ function onMessage(ws,m){
    const text=safeChatText(m.text);
    if(!text)return;
    p.lastChatAt=now;
-   broadcast(room,{
-     type:"chat_message",
-     seat:p.seat,
-     name:p.name,
-     text,
-     ts:now
-   });
+   const entry={seat:p.seat,name:p.name,text,ts:now};
+   room.chatHistory.push(entry);
+   if(room.chatHistory.length>50)room.chatHistory.splice(0,room.chatHistory.length-50);
+   broadcast(room,{type:"chat_message",...entry});
    return;
  }
  if(m.type==="start_game"){
@@ -452,11 +483,13 @@ function onMessage(ws,m){
    shufflePlayersForColors(room);
    room.started=true;room.state=stampPlayerNames(room,m.state);room.state.botSeats=room.players.filter(x=>x.bot).map(x=>x.seat);
    room.misses=Array(total).fill(0);room.matchPoints=Array(total).fill(0);room.awardedHomes=Array(total).fill(0);
-   room.deadline=Date.now()+TURN_MS;room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;room.version++;
+   room.deadline=room.timerEnabled===false?0:Date.now()+TURN_MS;room.timeoutInProgress=false;room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;room.version++;
    const first=room.players.find(x=>x.seat===0),color=roomColors(room)[0]||"Красный";
-   room.status=`Жребий цветов проведён. Первым ходит ${first?.name||"игрок"} — ${color}. На ход 25 секунд.`;
-   for(const rp of room.players)if(!rp.bot&&rp.connected&&rp.ws)send(rp.ws,{type:"game_started",seat:rp.seat,players:playerList(room),state:room.state,status:room.status,version:room.version,deadline:room.deadline,misses:room.misses,matchPoints:room.matchPoints,autoSeat:null,autoControllerSeat:null});
-   roomUpdate(room);broadcast(room,{type:"turn_timer",turn:room.state.turn,deadline:room.deadline,misses:room.misses,matchPoints:room.matchPoints});return;
+   room.status=room.timerEnabled===false
+     ? `Жребий цветов проведён. Первым ходит ${first?.name||"игрок"} — ${color}. Игра без таймера.`
+     : `Жребий цветов проведён. Первым ходит ${first?.name||"игрок"} — ${color}. На ход 25 секунд.`;
+   for(const rp of room.players)if(!rp.bot&&rp.connected&&rp.ws)send(rp.ws,{type:"game_started",seat:rp.seat,players:playerList(room),state:room.state,status:room.status,version:room.version,deadline:room.deadline,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints,autoSeat:null,autoControllerSeat:null});
+   roomUpdate(room);broadcast(room,{type:"turn_timer",turn:room.state.turn,deadline:room.deadline,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints});return;
  }
  if(room.gameOver)return err(ws,"Эта партия уже завершена.");
  if(room.state?.players?.[p.seat]?.eliminated)return err(ws,"Вы выбыли из этой партии.");
@@ -464,14 +497,15 @@ function onMessage(ws,m){
    if(!room.started||!room.state)return err(ws,"Игра ещё не началась.");if(room.actionSeat!==null)return err(ws,"Сначала завершите текущий ход.");
    if(room.state.rolled)return err(ws,"Кости уже брошены.");if(!canControlSeat(room,p,room.state.turn))return err(ws,"Сейчас ход другого игрока.");
    const autoController=(room.autoSeat===room.state.turn&&room.autoControllerSeat===p.seat);
-   if(!autoController&&Date.now()>room.deadline){timeoutTurn(room);return}
+   if(!autoController&&room.timerEnabled!==false&&room.deadline>0&&Date.now()>room.deadline){timeoutTurn(room);return}
    const actingSeat=room.state.turn,dice=[crypto.randomInt(1,7),crypto.randomInt(1,7)];room.actionSeat=actingSeat;room.version++;broadcast(room,{type:"roll_result",seat:actingSeat,dice,version:room.version});return;
  }
  if(m.type==="state_update"){
    if(!room.started)return err(ws,"Игра ещё не началась.");if(room.actionSeat==null||!canControlSeat(room,p,room.actionSeat))return err(ws,"Это состояние может отправить только игрок, который сейчас делает ход.");
    if(!validateState(room,m.state))return err(ws,"Сервер отклонил некорректное состояние игры.");
    const tempController=(room.autoSeat!=null&&room.autoControllerSeat===p.seat);
-   if(!tempController&&Date.now()>room.deadline){timeoutTurn(room);return}
+   if(room.timeoutInProgress&&!tempController&&room.autoSeat!=null)return err(ws,"Просрочка уже обрабатывается: система выполняет автоход.");
+   if(!tempController&&room.timerEnabled!==false&&room.deadline>0&&Date.now()>room.deadline){timeoutTurn(room);return}
    const oldTurn=room.state.turn,oldRolled=!!room.state.rolled;
    const next=stampPlayerNames(room,m.state);
    for(let i=0;i<room.state.players.length;i++)if(room.state.players[i]?.eliminated)next.players[i].eliminated=true;
@@ -505,7 +539,7 @@ function onMessage(ws,m){
    }
 
    broadcast(room,{type:"state_sync",state:room.state,status:room.status,actionSeat:room.actionSeat,
-     deadline:room.deadline,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
+     deadline:room.deadline,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
      autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});
    return;
  }
@@ -538,8 +572,8 @@ server.on("upgrade",(req,socket)=>{
 setInterval(()=>{
  const now=Date.now();
  for(const room of rooms.values()){
-   if(room.started&&!room.gameOver&&room.deadline&&now>=room.deadline)timeoutTurn(room);
+   if(room.started&&!room.gameOver&&room.timerEnabled!==false&&room.deadline&&!room.timeoutInProgress&&now>=room.deadline)timeoutTurn(room);
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V41: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V42: http://localhost:${PORT}`));
