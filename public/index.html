@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Мондавошка V43 — исправление 3 кушей</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Мондавошка V47 — фишки стран за реальные деньги</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -64,6 +64,12 @@
 <main>
 <section class="boardbox">
   <svg id="board" viewBox="0 0 1000 1000"></svg>
+
+  <div id="seatBadgeTop" class="seatBadge seatBadgeTop" hidden></div>
+  <div id="seatBadgeRight" class="seatBadge seatBadgeRight" hidden></div>
+  <div id="seatBadgeBottom" class="seatBadge seatBadgeBottom" hidden></div>
+  <div id="seatBadgeLeft" class="seatBadge seatBadgeLeft" hidden></div>
+
   <div id="chatBubbleLayer" class="chatBubbleLayer" aria-live="polite"></div>
 </section>
 <aside>
@@ -112,10 +118,6 @@
   <small class="chatHint" id="chatHint">Enter — отправить · максимум 80 знаков</small>
 </div>
 <div class="card direction"><b>Направление игры</b><div class="clockwise">↻ По часовой стрелке</div><div id="turnOrder" class="turnOrder">Красный → Чёрный → Синий → Бело-синий</div></div><div class="card"><b>Как ходить</b><p>Обычно сначала играется большая кость, затем меньшая. Внутри ловушки порядок свободный. Куш (дубль) позволяет сбить фишку в углу. После полного круга фишка сначала проходит через свою клетку БАЗА, затем со следующего шага поворачивает на внутреннюю дорожку Домика и идёт по ней клетками.</p></div>
-<div class="card penaltyCard">
-      <b>Желание проигравшему</b>
-      <div id="penaltyText" class="penaltyText">Определится колесом фортуны перед игрой</div>
-    </div>
     <div class="card legend"><div><i class="g"></i> можно ходить</div><div><i class="b"></i> маршрут</div><div><i class="y"></i> конечная клетка</div></div>
 </aside>
 </main></div>
@@ -142,7 +144,7 @@
           </div>
           <div class="hubSide">
             <button id="openRating" class="hubFeature" type="button"><b>🏆 Рейтинг игроков</b><span>За каждую фишку в Домике +20 очков</span></button>
-            <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин фишек</b><span>10 цветов по 200 очков + премиум</span></button>
+            <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин фишек</b><span>Цвета и фишки стран за игровые очки</span></button>
             <div class="hubRules"><b>Онлайн-правило времени</b><span>Можно играть с таймером 25 секунд или без него. При таймере: 3 просрочки — поражение.</span></div>
           </div>
         </div>
@@ -162,6 +164,10 @@
         <div class="modalTitleRow"><div><h2>🛍 Магазин фишек</h2><p>Рейтинг не уменьшается при покупке. Тратится только баланс заработанных очков.</p></div><button class="hubBack" type="button">← В меню</button></div>
         <h3>Цветные фишки — 200 очков</h3>
         <div id="skinGrid" class="skinGrid"></div>
+
+        <h3 class="countryShopTitle">🌍 Фишки стран — премиум</h3>
+        <p class="countryShopNote">Покупаются за реальные деньги через магазин Яндекс Игр. Цена показывается из каталога.</p>
+        <div id="countryGrid" class="skinGrid countryGrid"></div>
         <h3>Премиум-фишки футбольных клубов</h3>
         
         <div id="premiumGrid" class="skinGrid premiumGrid"></div>
@@ -181,7 +187,7 @@
         </label>
         <div class="dialogActions">
           <button class="backToMenu" type="button">← Назад</button>
-          <button id="start" type="button">Далее — колесо фортуны</button>
+          <button id="start" type="button">Начать игру</button>
         </div>
       </div>
     </div>
@@ -291,31 +297,7 @@
         </label>
         <div class="dialogActions">
           <button id="leaveOnlineRoom" type="button">← Выйти</button>
-          <button id="startOnlineGame" type="button" disabled>Колесо фортуны и начать</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal" id="wheelModal">
-      <div class="dialog wheelDialog">
-        <h2>Колесо желаний</h2>
-        <p class="wheelIntro">Колесо заранее определит, что выполняет проигравший игрок.</p>
-
-        <div class="wheelStage">
-          <div class="wheelPointer"></div>
-          <svg id="fortuneWheel" viewBox="0 0 420 420" aria-label="Колесо фортуны">
-            <g id="wheelRotor"></g>
-            <circle cx="210" cy="210" r="38" class="wheelHub"></circle>
-            <text x="210" y="218" text-anchor="middle" class="wheelHubText">УДАЧА</text>
-          </svg>
-        </div>
-
-        <div id="wheelResult" class="wheelResult">Нажмите «Крутить колесо»</div>
-        <div id="wishList" class="wishList"></div>
-
-        <div class="wheelButtons">
-          <button id="spinWheel" type="button">Крутить колесо</button>
-          <button id="beginGame" type="button" disabled>Начать игру</button>
+          <button id="startOnlineGame" type="button" disabled>Начать игру</button>
         </div>
       </div>
     </div>

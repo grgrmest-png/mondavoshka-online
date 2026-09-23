@@ -116,130 +116,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:15px}.boardbox{a
 #sum:disabled{opacity:.35}
 
 
-/* ===== V18 — колесо фортуны и музыка ===== */
-.headerActions{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  justify-content:flex-end;
-}
-#musicToggle{
-  min-width:135px;
-}
-.penaltyCard{
-  background:linear-gradient(180deg,#f4e3c0,#e7c995);
-}
-.penaltyText{
-  margin-top:8px;
-  padding:9px 10px;
-  border-radius:8px;
-  background:#cfa66e55;
-  border:1px solid #9d7245;
-  font-weight:800;
-  line-height:1.35;
-}
 
-.wheelDialog{
-  width:min(720px,94vw);
-  text-align:center;
-}
-.wheelIntro{
-  margin-top:-4px;
-  color:#65472d;
-}
-.wheelStage{
-  position:relative;
-  width:min(430px,82vw);
-  aspect-ratio:1;
-  margin:12px auto 8px;
-  filter:drop-shadow(0 12px 14px #0006);
-}
-#fortuneWheel{
-  width:100%;
-  height:100%;
-  display:block;
-  overflow:visible;
-}
-#wheelRotor{
-  transform-origin:210px 210px;
-  transition:transform 4.6s cubic-bezier(.12,.66,.12,1);
-}
-.wheelPointer{
-  position:absolute;
-  z-index:5;
-  top:-7px;
-  left:50%;
-  transform:translateX(-50%);
-  width:0;height:0;
-  border-left:22px solid transparent;
-  border-right:22px solid transparent;
-  border-top:0;
-  border-bottom:48px solid #6b3418;
-  filter:drop-shadow(0 3px 2px #0006);
-}
-.wheelHub{
-  fill:#f5d58d;
-  stroke:#7e4b22;
-  stroke-width:7;
-  filter:drop-shadow(0 3px 3px #0005);
-}
-.wheelHubText{
-  font:900 13px Georgia,serif;
-  fill:#6c421e;
-}
-.wheelResult{
-  min-height:48px;
-  margin:8px 0;
-  padding:11px 12px;
-  border:2px solid #9b6d36;
-  border-radius:10px;
-  background:#f7e5be;
-  font-weight:900;
-  font-size:18px;
-}
-.wishList{
-  display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:6px;
-  margin:10px 0 12px;
-  text-align:left;
-}
-.wishChip{
-  padding:7px 9px;
-  border-radius:8px;
-  border:1px solid #a47b4f;
-  background:#e7c793;
-  font-size:13px;
-  line-height:1.25;
-}
-.wheelButtons{
-  display:flex;
-  justify-content:center;
-  gap:8px;
-  flex-wrap:wrap;
-}
-#beginGame:disabled{
-  opacity:.4;
-}
-@media(max-width:620px){
-  .headerActions{width:100%}
-  .headerActions button{flex:1}
-  .wishList{grid-template-columns:1fr}
-}
-
-/* колесо */
-.wheelSector{
-  stroke:#6a451f;
-  stroke-width:2.2;
-}
-.wheelLabel{
-  font:800 13px Arial,sans-serif;
-  fill:#2a1b12;
-  paint-order:stroke;
-  stroke:#fff6df;
-  stroke-width:2.5px;
-  stroke-linejoin:round;
-}
 
 /* V19 — активная музыка */
 #musicToggle{
@@ -860,3 +737,115 @@ button{-webkit-tap-highlight-color:transparent}
 }
 
 #turnTimerUnit{font-style:normal;font-weight:700}
+
+
+/* ==========================================================
+   V44 — подписи игроков по сторонам игрового стола
+   ========================================================== */
+.seatBadge{
+  position:absolute;
+  z-index:18;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  max-width:210px;
+  min-height:27px;
+  padding:4px 8px;
+  border:2px solid #6c4327;
+  border-radius:999px;
+  background:rgba(250,225,181,.96);
+  color:#3b2517;
+  box-shadow:0 3px 8px #0007,inset 0 1px 0 #fff9;
+  pointer-events:none;
+  font:700 12px Arial,sans-serif;
+  white-space:nowrap;
+}
+.seatBadge[hidden]{display:none!important}
+.seatBadge span{
+  max-width:105px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.seatBadge small{font-size:9px;opacity:.72}
+.seatBadge b{
+  padding:2px 5px;
+  border-radius:999px;
+  background:#2b8d52;
+  color:#fff;
+  font-size:9px;
+}
+.seatBadge.isMe{
+  outline:3px solid #38d878;
+  box-shadow:0 0 0 2px #174e2b,0 4px 11px #0008;
+}
+.seatColor{
+  width:12px;height:12px;min-width:12px;
+  border-radius:50%;
+  border:2px solid #4e2b18;
+  box-shadow:inset 0 1px 2px #fff8,0 1px 2px #0007;
+}
+.seatColor-red{background:#df2735}
+.seatColor-black{background:#171717}
+.seatColor-blue{background:#008fa5}
+.seatColor-whiteblue{background:#f8f7ef;border-color:#174f8f}
+
+.seatBadgeTop{top:11.0%;left:50%;transform:translateX(-50%)}
+.seatBadgeBottom{bottom:10.6%;left:50%;transform:translateX(-50%)}
+.seatBadgeLeft{left:10%;top:50%;transform:translate(-50%,-50%) rotate(-90deg)}
+.seatBadgeRight{right:10%;top:50%;transform:translate(50%,-50%) rotate(90deg)}
+
+@media(max-width:700px){
+  .seatBadge{
+    min-height:22px;
+    padding:2px 5px;
+    gap:3px;
+    font-size:9px;
+    max-width:125px;
+    border-width:1px;
+  }
+  .seatBadge span{max-width:60px}
+  .seatBadge small{display:none}
+  .seatBadge b{font-size:7px;padding:1px 3px}
+  .seatColor{width:9px;height:9px;min-width:9px;border-width:1px}
+  .seatBadgeTop{top:10.5%}
+  .seatBadgeBottom{bottom:10.2%}
+  .seatBadgeLeft{left:9.5%}
+  .seatBadgeRight{right:9.5%}
+}
+
+
+/* ==========================================================
+   V46 — фишки стран
+   ========================================================== */
+.countryShopTitle{margin-top:20px!important}
+.countryShopNote{
+  margin:-5px 0 10px;
+  color:#76583d;
+  font-size:11px;
+}
+.countrySkinCard{position:relative}
+.countryPiece{
+  position:relative;
+  overflow:hidden;
+  border:3px solid #57351f;
+  box-shadow:inset 0 0 0 2px #fff5,inset -7px -8px 10px #0003,0 4px 7px #0005;
+}
+.countryEmoji{
+  position:absolute;
+  right:-2px;
+  bottom:-4px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:22px;
+  height:22px;
+  border-radius:50%;
+  background:#fff5df;
+  border:1px solid #5b3a23;
+  font-size:13px;
+  box-shadow:0 2px 4px #0005;
+}
+@media(max-width:700px){
+  .countryShopNote{font-size:10px}
+  .countryEmoji{width:18px;height:18px;font-size:11px}
+}

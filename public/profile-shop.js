@@ -13,6 +13,20 @@
   {id:"burgundy",name:"Бордовый",color:"#8d2f49"},
   {id:"turquoise",name:"Бирюза",color:"#1bb7aa"}
  ];
+ const COUNTRY_SKINS=[
+  {id:"country_russia",skinId:"country_russia",productId:"skin_country_russia",name:"Россия",emoji:"🇷🇺",flag:"RU",color:"#f7f7f7",preview:"linear-gradient(#fff 0 33%,#2456c7 33% 66%,#d52b1e 66%)"},
+  {id:"country_brazil",skinId:"country_brazil",productId:"skin_country_brazil",name:"Бразилия",emoji:"🇧🇷",flag:"BR",color:"#159447",preview:"radial-gradient(circle,#2448a5 0 24%,transparent 25%),linear-gradient(35deg,transparent 34%,#f7d117 35% 65%,transparent 66%),#159447"},
+  {id:"country_argentina",skinId:"country_argentina",productId:"skin_country_argentina",name:"Аргентина",emoji:"🇦🇷",flag:"AR",color:"#75bfe8",preview:"linear-gradient(#75bfe8 0 33%,#fff 33% 66%,#75bfe8 66%)"},
+  {id:"country_france",skinId:"country_france",productId:"skin_country_france",name:"Франция",emoji:"🇫🇷",flag:"FR",color:"#173f8e",preview:"linear-gradient(90deg,#173f8e 0 33%,#fff 33% 66%,#e52b3a 66%)"},
+  {id:"country_germany",skinId:"country_germany",productId:"skin_country_germany",name:"Германия",emoji:"🇩🇪",flag:"DE",color:"#171717",preview:"linear-gradient(#171717 0 33%,#d82431 33% 66%,#f0c223 66%)"},
+  {id:"country_spain",skinId:"country_spain",productId:"skin_country_spain",name:"Испания",emoji:"🇪🇸",flag:"ES",color:"#b91929",preview:"linear-gradient(#b91929 0 25%,#f2c72b 25% 75%,#b91929 75%)"},
+  {id:"country_italy",skinId:"country_italy",productId:"skin_country_italy",name:"Италия",emoji:"🇮🇹",flag:"IT",color:"#168752",preview:"linear-gradient(90deg,#168752 0 33%,#fff 33% 66%,#d72b36 66%)"},
+  {id:"country_japan",skinId:"country_japan",productId:"skin_country_japan",name:"Япония",emoji:"🇯🇵",flag:"JP",color:"#f7f7f4",preview:"radial-gradient(circle,#c91f37 0 28%,transparent 29%),#f7f7f4"},
+  {id:"country_korea",skinId:"country_korea",productId:"skin_country_korea",name:"Южная Корея",emoji:"🇰🇷",flag:"KR",color:"#f7f7f4",preview:"linear-gradient(145deg,transparent 42%,#2056a5 43% 56%,transparent 57%),radial-gradient(circle at 48% 43%,#d52c3a 0 22%,transparent 23%),#f7f7f4"},
+  {id:"country_usa",skinId:"country_usa",productId:"skin_country_usa",name:"США",emoji:"🇺🇸",flag:"US",color:"#f8f7ef",preview:"linear-gradient(90deg,#23458e 0 42%,transparent 42%) 0 0/100% 52% no-repeat,repeating-linear-gradient(#c72c3b 0 9%,#fff 9% 18%)"},
+  {id:"country_kazakhstan",skinId:"country_kazakhstan",productId:"skin_country_kazakhstan",name:"Казахстан",emoji:"🇰🇿",flag:"KZ",color:"#27a9c5",preview:"radial-gradient(circle,#f1c52e 0 20%,transparent 21%),#27a9c5"},
+  {id:"country_china",skinId:"country_china",productId:"skin_country_china",name:"Китай",emoji:"🇨🇳",flag:"CN",color:"#d92832",preview:"radial-gradient(circle at 35% 35%,#f4cd32 0 15%,transparent 16%),#d92832"}
+ ];
  const CLUB_PRODUCTS=[
   {productId:"skin_barcelona",skinId:"club_barcelona",name:"Барселона"},
   {productId:"skin_real_madrid",skinId:"club_real_madrid",name:"Реал Мадрид"},
@@ -139,10 +153,12 @@
    }
  }
  function publicProfile(){return {id:S.id,name:S.name,skinId:S.equipped,rating:S.rating}}
- function getSkin(id){return SKINS.find(s=>s.id===id)||CLUB_PRODUCTS.find(x=>x.skinId===id)||SKINS[0]}
+ function getSkin(id){return SKINS.find(s=>s.id===id)||COUNTRY_SKINS.find(s=>s.id===id)||CLUB_PRODUCTS.find(x=>x.skinId===id)||SKINS[0]}
  function skinVisual(id){
    const s=SKINS.find(x=>x.id===id);
    if(s)return {color:s.color,name:s.name};
+   const country=COUNTRY_SKINS.find(x=>x.id===id);
+   if(country)return {color:country.color,name:country.name,flag:country.flag,emoji:country.emoji};
    const c=CLUB_PRODUCTS.find(x=>x.skinId===id);
    if(c)return {name:c.name,...(CLUB_VISUALS[id]||{color:"#bbb",stripe:"#777"})};
    return {color:null,name:"Классика"};
@@ -199,9 +215,43 @@
    else{btn.textContent="Купить за 200";btn.disabled=S.balance<200;btn.onclick=()=>buySkin(s.id)}
    d.appendChild(btn);return d;
  }
+ function countrySkinCard(s){
+   const owned=S.owned.includes(s.skinId),equipped=S.equipped===s.skinId;
+   const d=document.createElement("div");
+   d.className="skinCard countrySkinCard premium"+(equipped?" equipped":"");
+
+   const piece=document.createElement("div");
+   piece.className="skinPiece countryPiece";
+   piece.style.background=s.preview;
+   const badge=document.createElement("span");
+   badge.className="countryEmoji";
+   badge.textContent=s.emoji;
+   piece.appendChild(badge);
+   d.appendChild(piece);
+
+   const name=document.createElement("b");
+   name.textContent=s.name;
+   d.appendChild(name);
+
+   const prod=S.catalog.get(s.productId);
+   const cost=document.createElement("small");
+   cost.textContent=prod?.price||"Премиум";
+   d.appendChild(cost);
+
+   const btn=document.createElement("button");
+   btn.type="button";
+   if(equipped){btn.textContent="Выбрано";btn.disabled=true}
+   else if(owned){btn.textContent="Выбрать";btn.onclick=()=>equipSkin(s.skinId)}
+   else if(!prod){btn.textContent="Скоро";btn.disabled=true}
+   else{btn.textContent="Купить";btn.onclick=()=>buyPremium(s)}
+   d.appendChild(btn);
+   return d;
+ }
  function renderShop(){
    const grid=document.querySelector("#skinGrid");
    if(grid){grid.innerHTML="";SKINS.forEach(s=>grid.appendChild(skinCard(s)))}
+   const countryGrid=document.querySelector("#countryGrid");
+   if(countryGrid){countryGrid.innerHTML="";COUNTRY_SKINS.forEach(s=>countryGrid.appendChild(countrySkinCard(s)))}
    const prem=document.querySelector("#premiumGrid");
    if(prem){
      prem.innerHTML="";
@@ -280,7 +330,7 @@
  document.querySelectorAll(".hubBack").forEach(b=>b.addEventListener("click",closeToMenu));
 
  window.MondavoshkaProfile={
-   state:S,skins:SKINS,clubProducts:CLUB_PRODUCTS,publicProfile,skinVisual,applyServerProfile,awardFromServer,loadLeaderboard,
+   state:S,skins:SKINS,countrySkins:COUNTRY_SKINS,clubProducts:CLUB_PRODUCTS,publicProfile,skinVisual,applyServerProfile,awardFromServer,loadLeaderboard,
    get equippedSkin(){return S.equipped},get id(){return S.id},get name(){return S.name}
  };
  initPlayer();

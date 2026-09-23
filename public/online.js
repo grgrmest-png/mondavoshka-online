@@ -213,7 +213,7 @@
    const hint=document.querySelector("#lobbyHint");
    if(hint){
      if(S.started)hint.textContent="Партия уже началась.";
-     else if(S.matchMode==="random"&&S.host)hint.textContent=`Соперники найдены (${connectedCount}). Запустите колесо фортуны и начните партию.`;
+     else if(S.matchMode==="random"&&S.host)hint.textContent=`Соперники найдены (${connectedCount}). Можно начинать партию.`;
      else if(S.matchMode==="random")hint.textContent=`Соперники найдены. Ждём, пока ${S.players.find(p=>p.host)?.name||"создатель"} запустит игру.`;
      else if(S.host)hint.textContent=connectedCount<2?"Для начала игры нужен ещё минимум 1 игрок.":`Подключено ${connectedCount}. Можно начинать игру.`;
      else hint.textContent="Ждём, пока создатель комнаты начнёт игру.";
@@ -500,7 +500,13 @@
  document.querySelector("#findRandomBtn").onclick=findRandom;
  document.querySelector("#cancelRandomBtn").onclick=()=>cancelRandom(false);
  document.querySelector("#roomCode").addEventListener("input",e=>e.target.value=normalizeCode(e.target.value));
- document.querySelector("#startOnlineGame").onclick=()=>{if(S.host){const real=S.players.filter(p=>p.connected&&!p.bot).length;S.fillBots=!!document.querySelector("#fillOnlineBots")?.checked&&real<4;S.pendingStart=true;openOnlineWheel(S.fillBots?4:real)}};
+ document.querySelector("#startOnlineGame").onclick=()=>{
+   if(!S.host)return;
+   const real=S.players.filter(p=>p.connected&&!p.bot).length;
+   S.fillBots=!!document.querySelector("#fillOnlineBots")?.checked&&real<4;
+   S.pendingStart=false;
+   startGame(null);
+ };
  document.querySelector("#leaveOnlineRoom").onclick=()=>leave(true);
  document.querySelector("#copyRoomCode").onclick=async()=>{try{await navigator.clipboard.writeText(S.code||"");document.querySelector("#copyRoomCode").textContent="Скопировано";setTimeout(()=>document.querySelector("#copyRoomCode").textContent="Копировать код",1200)}catch{}};
 

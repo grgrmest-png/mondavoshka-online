@@ -76,6 +76,58 @@ function pieceSkin(pl){
  const id=pl?.skinId||"default";
  return window.MondavoshkaProfile?.skinVisual?.(id)||{color:null,name:"Классика"};
 }
+
+function drawCountrySkin(grp,p,skin){
+ const f=skin?.flag;
+ if(!f)return;
+
+ const x=p[0],y=p[1];
+ const line=(x1,y1,x2,y2,color,w=8,opacity=1)=>
+   E("path",{d:`M${x1} ${y1} L${x2} ${y2}`,stroke:color,"stroke-width":w,
+             "stroke-linecap":"butt",opacity},grp);
+
+ if(f==="RU"){
+   line(x-16,y-1,x+16,y-1,"#2456c7",9);
+   line(x-16,y+8,x+16,y+8,"#d52b1e",9);
+ }else if(f==="BR"){
+   E("path",{d:`M${x} ${y-14} L${x+15} ${y} L${x} ${y+14} L${x-15} ${y} Z`,fill:"#f7d117"},grp);
+   E("circle",{cx:x,cy:y,r:7,fill:"#2448a5"},grp);
+ }else if(f==="AR"){
+   line(x-16,y,x+16,y,"#fff",10);
+   E("circle",{cx:x,cy:y,r:3.2,fill:"#e0ad25"},grp);
+ }else if(f==="FR"){
+   line(x,y-16,x,y+16,"#fff",11);
+   line(x+10,y-16,x+10,y+16,"#e52b3a",10);
+ }else if(f==="DE"){
+   line(x-16,y,x+16,y,"#d82431",10);
+   line(x-16,y+10,x+16,y+10,"#f0c223",10);
+ }else if(f==="ES"){
+   line(x-16,y,x+16,y,"#f2c72b",16);
+ }else if(f==="IT"){
+   line(x,y-16,x,y+16,"#fff",11);
+   line(x+10,y-16,x+10,y+16,"#d72b36",10);
+ }else if(f==="JP"){
+   E("circle",{cx:x,cy:y,r:8,fill:"#c91f37"},grp);
+ }else if(f==="KR"){
+   E("path",{d:`M${x-7} ${y} A7 7 0 0 1 ${x+7} ${y} A7 7 0 0 1 ${x-7} ${y}`,fill:"#d52c3a"},grp);
+   E("path",{d:`M${x-7} ${y} A7 7 0 0 0 ${x+7} ${y} A7 7 0 0 0 ${x-7} ${y}`,fill:"#2056a5"},grp);
+   line(x-13,y-10,x-7,y-13,"#202020",2.2);
+   line(x+8,y+11,x+14,y+8,"#202020",2.2);
+ }else if(f==="US"){
+   for(let yy=-12;yy<=12;yy+=6)line(x-16,y+yy,x+16,y+yy,"#c72c3b",3.2);
+   E("rect",{x:x-16,y:y-15,width:13,height:11,rx:1,fill:"#23458e"},grp);
+   E("circle",{cx:x-11,cy:y-10,r:1.2,fill:"#fff"},grp);
+   E("circle",{cx:x-6,cy:y-10,r:1.2,fill:"#fff"},grp);
+ }else if(f==="KZ"){
+   E("circle",{cx:x,cy:y-1,r:6,fill:"#f1c52e"},grp);
+   line(x,y+6,x,y+14,"#f1c52e",3);
+   line(x-5,y+8,x-9,y+13,"#f1c52e",2);
+   line(x+5,y+8,x+9,y+13,"#f1c52e",2);
+ }else if(f==="CN"){
+   let t=E("text",{x:x-7,y:y+6,fill:"#f4cd32","font-size":18,"font-weight":900,"text-anchor":"middle"},grp);
+   t.textContent="★";
+ }
+}
 function nextActiveSeat(from){
  if(!g?.players?.length)return 0;
  for(let k=1;k<=g.players.length;k++){
@@ -257,17 +309,60 @@ function drawBoard(){
  thin.forEach(a=>E("line",{x1:a.x1,y1:a.y1,x2:a.x2,y2:a.y2,stroke:"#55341d","stroke-width":4,"marker-end":"url(#thinArrow)","stroke-linecap":"round"}));
 
  renderPieces();
+ renderSeatBadges();
 }function player(){return g.players[g.turn]}
 function playerLabel(pl){
  if(!pl)return "Игрок";
  if(pl.playerName)return `${pl.playerName} — ${pl.name}`;
  return pl.name;
 }
+
+function seatBadgeId(colorId){
+ return colorId==="blue"?"#seatBadgeTop":
+        colorId==="whiteblue"?"#seatBadgeRight":
+        colorId==="red"?"#seatBadgeBottom":
+        "#seatBadgeLeft";
+}
+function renderSeatBadges(){
+ const ids=["#seatBadgeTop","#seatBadgeRight","#seatBadgeBottom","#seatBadgeLeft"];
+ ids.forEach(id=>{
+   const e=$(id);
+   if(e){e.hidden=true;e.replaceChildren();}
+ });
+ if(!g?.players?.length)return;
+
+ const onlineSeat=onlineActive()?window.MondavoshkaOnline?.seat:null;
+ for(const pl of g.players){
+   const el=$(seatBadgeId(pl.id));
+   if(!el)continue;
+
+   const isMe=(Number.isInteger(onlineSeat)&&onlineSeat===pl.owner)||pl.playerName==="Вы";
+   el.hidden=false;
+   el.classList.toggle("isMe",!!isMe);
+
+   const dot=document.createElement("i");
+   dot.className=`seatColor seatColor-${pl.id}`;
+
+   const name=document.createElement("span");
+   name.textContent=pl.playerName||pl.name||`Игрок ${pl.owner+1}`;
+
+   const color=document.createElement("small");
+   color.textContent=pl.name;
+
+   el.append(dot,name,color);
+
+   if(isMe){
+     const you=document.createElement("b");
+     you.textContent="ВЫ";
+     el.appendChild(you);
+   }
+ }
+}
 function buildGameState(n,wish=selectedWish){
  const colorSet=n===2?[C[0],C[2]]:n===3?[C[0],C[1],C[2]]:C.slice(0,4);
  return {
    players:colorSet.map((c,owner)=>({...c,owner,skinId:"default",profileId:null,eliminated:false,pieces:Array.from({length:5},(_,i)=>({
-     id:c.id+i,owner,n:i,state:"yard",track:null,progress:0,homeIndex:null,
+     id:c.id+i,owner,n:i,state:"yard",track:null,progress:0,lapComplete:false,homeIndex:null,
      trap:0,trapSide:null,captorSide:null
    }))})),
    turn:0,d:[1,1],used:[false,false],selected:null,sum:false,rolled:false,double:false,
@@ -418,6 +513,7 @@ function walkPreviewCoords(previewMove){
 
 function renderPieces(){
  if(!g)return;
+ renderSeatBadges();
  updateTripleKushCard();
  svg.querySelectorAll(".piece,.route,.shards").forEach(e=>e.remove());
  if(preview){
@@ -456,6 +552,7 @@ function renderPieces(){
   if(skin.stripe){
     E("path",{d:`M${p[0]-15} ${p[1]-9} H${p[0]+15} M${p[0]-15} ${p[1]+2} H${p[0]+15}`,stroke:skin.stripe,"stroke-width":5,opacity:.9},grp);
   }
+  drawCountrySkin(grp,p,skin);
   if(pl.id==="whiteblue"&&!skin.color){
     E("path",{d:`M${p[0]-15} ${p[1]}h30 M${p[0]} ${p[1]-15}v30`,stroke:"#164b8c","stroke-width":8,"stroke-linecap":"round"},grp);
   }
@@ -752,30 +849,37 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
  if(pc.state!=="track"||trapOnly)return null;
 
  // Маршрут строится ПОШАГОВО.
- // После полного круга фишка ОБЯЗАТЕЛЬНО проходит через собственную клетку БАЗА.
- // Если ход закончился на БАЗЕ — фишка остаётся там. Со следующего шага
- // она поворачивает в первую клетку внутреннего Домика. Второй круг невозможен.
+ // Для завершённого круга используется отдельный флаг lapComplete.
+ // Поэтому фишка после первого полного круга больше не может случайно уйти на второй.
  const route=[];
  let track=pc.track;
  let progress=Math.max(0,Number(pc.progress)||0);
+ let lapComplete = pc.lapComplete===true ||
+   (pc.lapComplete==null && track===START[pl.id] && progress>=TRACK.length);
  let inHome=false;
  let homeIndex=-1;
+
  for(let k=1;k<=steps;k++){
    if(!inHome){
-     // Только что вышедшая из двора фишка стоит на БАЗЕ с progress===0
-     // и должна начать внешний круг. Вернувшаяся на БАЗУ имеет progress>0
-     // и следующим шагом обязана повернуть внутрь.
-     if(track===START[pl.id] && progress>0){
+     // Фишка уже завершила круг и стоит на собственной БАЗЕ.
+     // Следующий шаг после БАЗЫ обязательно идёт в первую клетку Домика.
+     if(track===START[pl.id] && lapComplete){
        inHome=true;
        homeIndex=0;
        if(homeOcc(pc.owner,0,pc.id))return null;
        route.push({kind:"home",index:0});
-     }else{
-       const next=(track-1+TRACK.length)%TRACK.length;
-       track=next;
-       progress++;
-       route.push({kind:"track",index:track});
+       continue;
      }
+
+     const next=(track-1+TRACK.length)%TRACK.length;
+     track=next;
+     progress++;
+
+     // Фиксируем момент возврата на собственную БАЗУ.
+     // Если кубик закончился на этой клетке — фишка остаётся на БАЗЕ.
+     if(track===START[pl.id])lapComplete=true;
+
+     route.push({kind:"track",index:track});
    }else{
      homeIndex++;
      if(homeIndex>4)return null;
@@ -796,7 +900,7 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
  const routeCoords=route.map(t=>t.kind==="track"?TRACK[t.index]:HOME[pl.id][t.index]);
 
  if(last.kind==="home"){
-   return {id:pc.id,path,homePath,route,routeCoords,dest:null,destHome:last.index,finalKind:"home"};
+   return {id:pc.id,path,homePath,route,routeCoords,dest:null,destHome:last.index,finalKind:"home",lapCompleteFinal:true};
  }
 
  const dest=last.index;
@@ -814,7 +918,7 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
    if(ownAt(jump.to,pc.owner))return null;
    if(!canCaptureAt(jump.to,pc.owner))return null;
  }
- return {id:pc.id,path,homePath,route,routeCoords,dest,jumpTo:jump?jump.to:null,finalKind:"track"};
+ return {id:pc.id,path,homePath,route,routeCoords,dest,jumpTo:jump?jump.to:null,finalKind:"track",lapCompleteFinal:lapComplete};
 }
 
 function currentLegal(){
@@ -932,6 +1036,7 @@ async function claimTripleKushBonus(pc){
  pc.homeIndex=slot;
  pc.track=null;
  pc.progress=TRACK.length;
+ pc.lapComplete=true;
  pc.trap=0;
  pc.trapSide=null;
  pc.captorSide=null;
@@ -1032,6 +1137,7 @@ async function execute(pc,mv){
    pc.captorSide=null;
    pc.track=null;
    pc.progress=0;
+   pc.lapComplete=false;
    pc.homeIndex=null;
    pc.trap=0;
    pc.trapSide=null;
@@ -1046,6 +1152,7 @@ async function execute(pc,mv){
    pc.state="track";
    pc.track=mv.dest;
    pc.progress=0;
+   pc.lapComplete=false;
    pc.homeIndex=null;
    pc.captorSide=null;
  }
@@ -1084,6 +1191,7 @@ async function execute(pc,mv){
  else{
    await animate(pc,mv.routeCoords||[],Math.max(220,(mv.routeCoords||[]).length*145),"walk");
    pc.progress+=(mv.path||[]).length;
+   pc.lapComplete=mv.lapCompleteFinal===true;
 
    if(mv.finalKind==="home"){
      pc.state="home";
@@ -1357,6 +1465,7 @@ async function capture(pc, captorSide){
   pc.captorSide=captorSide;
   pc.track=null;
   pc.progress=0;
+  pc.lapComplete=false;
   pc.homeIndex=null;
   pc.trap=0;
   pc.trapSide=null;
@@ -1877,7 +1986,6 @@ function showMainMenu(){
   closeGameMenus();
   $("#mainMenu").classList.add("show");
   selectedWish=null;
-  updatePenaltyCard();
 }
 
 $("#playLocal").onclick=()=>{
@@ -1907,11 +2015,12 @@ function updateLocalFillOffer(){if(localFillWrap)localFillWrap.hidden=Number(loc
 localCountEl?.addEventListener("change",updateLocalFillOffer);updateLocalFillOffer();
 $("#victoryMenu").onclick=()=>{closeVictory();showMainMenu()};
 $("#victoryAgain").onclick=()=>{const mode=gameMode;closeVictory();showMainMenu();if(mode==="local"||mode==="mixed"){$("#mainMenu").classList.remove("show");$("#localModal").classList.add("show")}else if(mode==="bot"){$("#mainMenu").classList.remove("show");$("#botModal").classList.add("show")}};
-$("#start").onclick=openWheel;
-$("#spinWheel").onclick=spinFortune;
-$("#beginGame").onclick=()=>{
- if(window.MondavoshkaOnline?.active && window.MondavoshkaOnline.pendingStart) window.MondavoshkaOnline.startGame(selectedWish);
- else newGame(pendingLocalHumanCount,selectedWish,pendingLocalFillBots);
+$("#start").onclick=()=>{
+ pendingPlayerCount=Number($("#count").value)||4;
+ pendingLocalHumanCount=pendingPlayerCount;
+ pendingLocalFillBots=!!$("#fillLocalBots")?.checked && pendingPlayerCount<4;
+ $("#localModal").classList.remove("show");
+ newGame(pendingLocalHumanCount,null,pendingLocalFillBots);
 };
 $("#musicToggle").onclick=toggleMusic;
 $("#sfxToggle").onclick=toggleSfx;
@@ -1940,7 +2049,6 @@ $("#confirmExitGame").onclick=()=>{
 $("#roll").onclick=roll;
 dice.forEach((b,i)=>b.onclick=()=>selectDie(i));
 $("#sum").onclick=selectSum;
-drawFortuneWheel();
 updateMusicButton();
 drawBoard();
 
@@ -1948,7 +2056,7 @@ drawBoard();
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden){
     yandexGameplayStop();
-  }else if(g && !$("#mainMenu").classList.contains("show") && !$("#localModal").classList.contains("show") && !$("#botModal").classList.contains("show") && !$("#onlineCreateModal").classList.contains("show") && !$("#onlineJoinModal").classList.contains("show") && !$("#onlineLobbyModal").classList.contains("show") && !$("#wheelModal").classList.contains("show")){
+  }else if(g && !$("#mainMenu").classList.contains("show") && !$("#localModal").classList.contains("show") && !$("#botModal").classList.contains("show") && !$("#onlineCreateModal").classList.contains("show") && !$("#onlineJoinModal").classList.contains("show") && !$("#onlineLobbyModal").classList.contains("show")){
     yandexGameplayStart();
   }
 });
