@@ -217,6 +217,7 @@ function createRoomObject(code,players,random=false,targetSize=null,timerEnabled
  return {code,players,started:false,state:null,status:"",actionSeat:null,version:1,lastActive:Date.now(),random,targetSize,
    timerEnabled:timerEnabled!==false,deadline:0,timeoutInProgress:false,
    misses:Array(players.length).fill(0),matchPoints:Array(players.length).fill(0),awardedHomes:Array(players.length).fill(0),
+   kushStreakSeat:null,kushStreakCount:0,
    chatHistory:[],gameOver:false,winnerSeat:null,autoSeat:null,autoControllerSeat:null};
 }
 function tryRandomMatch(size,timerEnabled=true){
@@ -243,6 +244,35 @@ function activeSeats(state){return state.players.map((p,i)=>p.eliminated?null:i)
 function resetTurnState(state){
  state.rolled=false;state.double=false;state.forcedSix=false;state.used=[false,false];state.selected=null;state.sum=false;state.trapOnlySelection=false;state.resumeStack=[];state.pendingGiftSeat=null;
 }
+function registerKushRoll(room,seat,dice){
+ const isDouble=Array.isArray(dice)&&dice.length===2&&Number(dice[0])===Number(dice[1]);
+
+ if(!isDouble){
+   room.kushStreakSeat=null;
+   room.kushStreakCount=0;
+   return {tripleKush:false,kushStreakSeat:null,kushStreakCount:0};
+ }
+
+ if(room.kushStreakSeat===seat)room.kushStreakCount=(Number(room.kushStreakCount)||0)+1;
+ else{
+   room.kushStreakSeat=seat;
+   room.kushStreakCount=1;
+ }
+
+ if(room.kushStreakCount>=3){
+   // Третий куш уже подтверждён сервером. Следующая серия начнётся с нуля.
+   room.kushStreakSeat=null;
+   room.kushStreakCount=0;
+   return {tripleKush:true,kushStreakSeat:seat,kushStreakCount:0};
+ }
+
+ return {
+   tripleKush:false,
+   kushStreakSeat:seat,
+   kushStreakCount:room.kushStreakCount
+ };
+}
+
 function startTurnTimer(room){
  if(!room.started||room.gameOver||!room.state)return;
  room.timeoutInProgress=false;
@@ -365,11 +395,12 @@ function beginTimeoutAutoplay(room,seat){
  room.actionSeat=seat;
  room.deadline=0;
  const dice=[crypto.randomInt(1,7),crypto.randomInt(1,7)];
+ const kush=registerKushRoll(room,seat,dice);
  room.version++;
  const rp=room.players.find(x=>x.seat===seat);
  room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Просрочка ${room.misses[seat]}/${MAX_MISSES}. Система автоматически делает один ход.`;
  broadcast(room,{
-   type:"timeout_autoplay",seat,controllerSeat:controller.seat,dice,state:room.state,status:room.status,
+   type:"timeout_autoplay",seat,controllerSeat:controller.seat,dice,...kush,state:room.state,status:room.status,
    deadline:0,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
    autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat
  });
@@ -483,7 +514,8 @@ function onMessage(ws,m){
    shufflePlayersForColors(room);
    room.started=true;room.state=stampPlayerNames(room,m.state);room.state.botSeats=room.players.filter(x=>x.bot).map(x=>x.seat);
    room.misses=Array(total).fill(0);room.matchPoints=Array(total).fill(0);room.awardedHomes=Array(total).fill(0);
-   room.deadline=room.timerEnabled===false?0:Date.now()+TURN_MS;room.timeoutInProgress=false;room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;room.version++;
+   room.deadline=room.timerEnabled===false?0:Date.now()+TURN_MS;room.timeoutInProgress=false;room.actionSeat=null;room.autoSeat=null;room.autoControllerSeat=null;
+   room.kushStreakSeat=null;room.kushStreakCount=0;room.version++;
    const first=room.players.find(x=>x.seat===0),color=roomColors(room)[0]||"Красный";
    room.status=room.timerEnabled===false
      ? `Жребий цветов проведён. Первым ходит ${first?.name||"игрок"} — ${color}. Игра без таймера.`
@@ -498,7 +530,10 @@ function onMessage(ws,m){
    if(room.state.rolled)return err(ws,"Кости уже брошены.");if(!canControlSeat(room,p,room.state.turn))return err(ws,"Сейчас ход другого игрока.");
    const autoController=(room.autoSeat===room.state.turn&&room.autoControllerSeat===p.seat);
    if(!autoController&&room.timerEnabled!==false&&room.deadline>0&&Date.now()>room.deadline){timeoutTurn(room);return}
-   const actingSeat=room.state.turn,dice=[crypto.randomInt(1,7),crypto.randomInt(1,7)];room.actionSeat=actingSeat;room.version++;broadcast(room,{type:"roll_result",seat:actingSeat,dice,version:room.version});return;
+   const actingSeat=room.state.turn,dice=[crypto.randomInt(1,7),crypto.randomInt(1,7)];
+   const kush=registerKushRoll(room,actingSeat,dice);
+   room.actionSeat=actingSeat;room.version++;
+   broadcast(room,{type:"roll_result",seat:actingSeat,dice,...kush,version:room.version});return;
  }
  if(m.type==="state_update"){
    if(!room.started)return err(ws,"Игра ещё не началась.");if(room.actionSeat==null||!canControlSeat(room,p,room.actionSeat))return err(ws,"Это состояние может отправить только игрок, который сейчас делает ход.");
@@ -510,6 +545,10 @@ function onMessage(ws,m){
    const next=stampPlayerNames(room,m.state);
    for(let i=0;i<room.state.players.length;i++)if(room.state.players[i]?.eliminated)next.players[i].eliminated=true;
    awardHomePoints(room,next);room.state=next;room.status=String(m.status||"").slice(0,500);room.version++;
+   if(oldTurn!==room.state.turn){
+     room.kushStreakSeat=null;
+     room.kushStreakCount=0;
+   }
    const winnerSeat=room.state.players.findIndex(pl=>!pl.eliminated&&pl.pieces.every(x=>x.state==="home"));
    if(winnerSeat>=0){finishMatch(room,winnerSeat,`${room.players.find(x=>x.seat===winnerSeat)?.name||"Игрок"} завёл все 5 фишек в Домик и победил!`);return}
    const autoOriginal=room.autoSeat;
@@ -576,4 +615,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V42: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V43: http://localhost:${PORT}`));
