@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Мондавошка V41 — онлайн-чат</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Мондавошка V42 — таймер, Домик и история чата</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -73,7 +73,7 @@
   <span id="tripleKushText">Выберите фишку — она сразу отправится в Домик.</span>
 </div>
 <div class="card turnTimerCard" id="turnTimerCard" hidden>
-  <div class="turnTimerTop"><b>Время хода</b><span><strong id="turnTimer">25</strong> сек</span></div>
+  <div class="turnTimerTop"><b>Время хода</b><span><strong id="turnTimer">25</strong> <em id="turnTimerUnit">сек</em></span></div>
   <div class="timerBar"><i id="turnTimerBar"></i></div>
   <small id="missCounter">Пропуски: 0 / 3</small>
 </div>
@@ -86,10 +86,13 @@
 <button class="die" id="d0" disabled><span data-v="1"></span></button><button class="die" id="d1" disabled><span data-v="1"></span></button>
 <button id="roll" disabled>Бросить кости</button><button id="sum" disabled>Ход суммой не используется</button>
 </div>
-<div class="card chatCard" id="chatCard">
+<div class="card chatCard" id="chatCard" hidden>
   <div class="chatTitle">
     <b>💬 Чат игроков</b>
-    <small>сообщение исчезнет с поля само</small>
+    <small>облако исчезает, история остаётся</small>
+  </div>
+  <div class="chatHistory" id="chatHistory" aria-live="polite">
+    <div class="chatHistoryEmpty">Пока сообщений нет</div>
   </div>
   <div class="quickEmoji" id="quickEmoji" aria-label="Быстрые смайлики">
     <button type="button" data-emoji="😂" title="Смеюсь">😂</button>
@@ -108,7 +111,7 @@
   </div>
   <small class="chatHint" id="chatHint">Enter — отправить · максимум 80 знаков</small>
 </div>
-<div class="card direction"><b>Направление игры</b><div class="clockwise">↻ По часовой стрелке</div><div id="turnOrder" class="turnOrder">Красный → Чёрный → Синий → Бело-синий</div></div><div class="card"><b>Как ходить</b><p>Обычно сначала играется большая кость, затем меньшая. Внутри ловушки порядок свободный. Куш (дубль) позволяет сбить фишку в углу. После полного круга фишка сразу поворачивает на внутреннюю дорожку Домика и идёт по ней клетками.</p></div>
+<div class="card direction"><b>Направление игры</b><div class="clockwise">↻ По часовой стрелке</div><div id="turnOrder" class="turnOrder">Красный → Чёрный → Синий → Бело-синий</div></div><div class="card"><b>Как ходить</b><p>Обычно сначала играется большая кость, затем меньшая. Внутри ловушки порядок свободный. Куш (дубль) позволяет сбить фишку в углу. После полного круга фишка сначала проходит через свою клетку БАЗА, затем со следующего шага поворачивает на внутреннюю дорожку Домика и идёт по ней клетками.</p></div>
 <div class="card penaltyCard">
       <b>Желание проигравшему</b>
       <div id="penaltyText" class="penaltyText">Определится колесом фортуны перед игрой</div>
@@ -140,7 +143,7 @@
           <div class="hubSide">
             <button id="openRating" class="hubFeature" type="button"><b>🏆 Рейтинг игроков</b><span>За каждую фишку в Домике +20 очков</span></button>
             <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин фишек</b><span>10 цветов по 200 очков + премиум</span></button>
-            <div class="hubRules"><b>Онлайн-правило времени</b><span>25 секунд на ход. Три пропуска — автоматическое поражение.</span></div>
+            <div class="hubRules"><b>Онлайн-правило времени</b><span>Можно играть с таймером 25 секунд или без него. При таймере: 3 просрочки — поражение.</span></div>
           </div>
         </div>
       </div>
@@ -214,6 +217,12 @@
             <option value="4">4 игрока</option>
           </select>
         </label>
+        <label>Режим времени
+          <select id="randomTimerMode">
+            <option value="on" selected>С таймером — 25 секунд на ход</option>
+            <option value="off">Без таймера</option>
+          </select>
+        </label>
         <div id="randomStatus" class="randomStatus"><span id="randomSpinner" class="randomSpinner"></span>Введите имя и начните поиск.</div>
         <div id="randomOnlineError" class="onlineError"></div>
         <p class="onlineHint">Игра подберёт людей, которые сейчас ищут партию с таким же количеством игроков.</p>
@@ -230,6 +239,12 @@
         <h2>Создать онлайн-комнату</h2>
         <label>Ваше имя
           <input id="createPlayerName" type="text" maxlength="24" placeholder="Например: Гриша">
+        </label>
+        <label>Режим времени
+          <select id="createTimerMode">
+            <option value="on" selected>С таймером — 25 секунд на ход</option>
+            <option value="off">Без таймера</option>
+          </select>
         </label>
         <p class="onlineHint">После создания появится 6-значный код. Передайте его остальным игрокам.</p>
         <div id="createOnlineError" class="onlineError"></div>
@@ -269,6 +284,7 @@
         <div class="lobbyTitle">Игроки</div>
         <div id="lobbyPlayers" class="lobbyPlayers"></div>
         <div id="lobbyHint" class="onlineHint">Ожидание игроков…</div>
+        <div id="lobbyTimerMode" class="lobbyTimerMode">⏱ Режим: 25 секунд на ход</div>
         <label id="fillOnlineBotsWrap" class="fillBotsOffer" hidden>
           <input id="fillOnlineBots" type="checkbox"> Заполнить свободные места компьютерами до 4 игроков
           <small>Для 2–3 реальных игроков. Если не отмечать — играете только людьми.</small>

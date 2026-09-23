@@ -4,7 +4,7 @@
   {name:"Красный",fill:"#df2735"},{name:"Чёрный",fill:"#171717"},
   {name:"Синий",fill:"#008fa5"},{name:"Бело-синий",fill:"#f8f7ef"}
  ];
- const S={socket:null,active:false,connected:false,started:false,code:null,token:null,seat:null,host:false,players:[],name:"",actionSeat:null,pendingStart:false,reconnectTimer:null,manualClose:false,lastVersion:0,randomSearching:false,randomSize:2,matchMode:"room",deadline:0,misses:[],matchPoints:[],fillBots:false,autoSeat:null,autoControllerSeat:null};
+ const S={socket:null,active:false,connected:false,started:false,code:null,token:null,seat:null,host:false,players:[],name:"",actionSeat:null,pendingStart:false,reconnectTimer:null,manualClose:false,lastVersion:0,randomSearching:false,randomSize:2,matchMode:"room",deadline:0,misses:[],matchPoints:[],fillBots:false,autoSeat:null,autoControllerSeat:null,timerEnabled:true,chatHistory:[]};
 
  function wsUrl(){
    const configured=String(window.MONDAVOSHKA_WS_URL||"").trim();
@@ -43,6 +43,8 @@
      document.querySelector("#chatBubbleLayer")?.replaceChildren();
      for(const t of chatBubbleTimers.values())clearTimeout(t);
      chatBubbleTimers.clear();
+     S.chatHistory=[];
+     renderChatHistory();
    }
  }
 
@@ -56,8 +58,9 @@
    const c=String(p?.color||"").toLowerCase();
    if(c.includes("крас"))return "chatBubbleBottom";
    if(c.includes("чёр")||c.includes("чер"))return "chatBubbleLeft";
-   if(c.includes("син"))return "chatBubbleTop";
+   // "Бело-синий" тоже содержит "син", поэтому его проверяем раньше.
    if(c.includes("бело"))return "chatBubbleRight";
+   if(c.includes("син"))return "chatBubbleTop";
    return ["chatBubbleBottom","chatBubbleLeft","chatBubbleTop","chatBubbleRight"][seat%4]||"chatBubbleBottom";
  }
 
@@ -69,6 +72,43 @@
    if(c.includes("син")&&!c.includes("бело"))return "#008fa5";
    if(c.includes("бело"))return "#3178b8";
    return "#8b5b32";
+ }
+
+ function renderChatHistory(){
+   const box=document.querySelector("#chatHistory");
+   if(!box)return;
+   box.replaceChildren();
+   const items=(S.chatHistory||[]).slice(-30);
+   if(!items.length){
+     const empty=document.createElement("div");
+     empty.className="chatHistoryEmpty";
+     empty.textContent="Пока сообщений нет";
+     box.appendChild(empty);
+     return;
+   }
+   for(const m of items){
+     const row=document.createElement("div");
+     row.className="chatHistoryRow";
+     row.style.setProperty("--chat-accent",chatAccent(Number(m.seat)));
+     const who=document.createElement("b");
+     who.textContent=String(m.name||"Игрок").slice(0,24);
+     const msg=document.createElement("span");
+     msg.textContent=cleanChatText(m.text);
+     row.append(who,msg);
+     box.appendChild(row);
+   }
+   box.scrollTop=box.scrollHeight;
+ }
+ function setChatHistory(items){
+   S.chatHistory=Array.isArray(items)?items.slice(-30):[];
+   renderChatHistory();
+ }
+ function appendChatHistory(m){
+   const clean={seat:Number(m.seat),name:String(m.name||"Игрок").slice(0,24),text:cleanChatText(m.text),ts:Number(m.ts)||Date.now()};
+   if(!clean.text)return;
+   S.chatHistory.push(clean);
+   if(S.chatHistory.length>30)S.chatHistory.splice(0,S.chatHistory.length-30);
+   renderChatHistory();
  }
 
  function showChatBubble(m){
@@ -168,6 +208,8 @@
    const fillWrap=document.querySelector("#fillOnlineBotsWrap"),fill=document.querySelector("#fillOnlineBots");
    if(fillWrap)fillWrap.hidden=!(S.host&&!S.started&&(connectedCount===2||connectedCount===3));
    if(fill&&connectedCount>=4){fill.checked=false;S.fillBots=false}
+   const timerMode=document.querySelector("#lobbyTimerMode");
+   if(timerMode)timerMode.textContent=S.timerEnabled?"⏱ Режим: 25 секунд на ход · 3 просрочки = поражение":"∞ Режим: без таймера";
    const hint=document.querySelector("#lobbyHint");
    if(hint){
      if(S.started)hint.textContent="Партия уже началась.";
@@ -205,17 +247,28 @@
    const card=document.querySelector("#turnTimerCard"),score=document.querySelector("#matchScoreCard");
    if(card)card.hidden=!(S.active&&S.started);
    if(score)score.hidden=!(S.active&&S.started);
-   const timer=document.querySelector("#turnTimer"),bar=document.querySelector("#turnTimerBar"),miss=document.querySelector("#missCounter");
-   const left=Math.max(0,S.deadline-Date.now()),sec=Math.max(0,Math.ceil(left/1000));
-   if(timer)timer.textContent=String(sec);
-   if(bar)bar.style.width=`${Math.max(0,Math.min(100,left/25000*100))}%`;
-   const myMiss=S.seat==null?0:(S.misses[S.seat]||0);
-   if(miss)miss.textContent=`Просрочки хода: ${myMiss} / 3`;
+   const timer=document.querySelector("#turnTimer"),unit=document.querySelector("#turnTimerUnit"),bar=document.querySelector("#turnTimerBar"),miss=document.querySelector("#missCounter");
+   if(!S.timerEnabled){
+     if(timer)timer.textContent="∞";
+     if(unit)unit.textContent="без лимита";
+     if(bar)bar.style.width="100%";
+     if(miss)miss.textContent="Таймер отключён — просрочки не считаются";
+   }else{
+     const left=Math.max(0,S.deadline-Date.now()),sec=Math.max(0,Math.ceil(left/1000));
+     if(timer)timer.textContent=String(sec);
+     if(unit)unit.textContent="сек";
+     if(bar)bar.style.width=`${Math.max(0,Math.min(100,left/25000*100))}%`;
+     if(miss){
+       const parts=S.players.filter(p=>!p.bot).slice().sort((a,b)=>a.seat-b.seat).map(p=>`${p.name}: ${S.misses[p.seat]||0}/3`);
+       miss.textContent=parts.length?`Просрочки — ${parts.join(" · ")}`:"Просрочки: 0 / 3";
+     }
+   }
    const mp=document.querySelector("#matchPoints");if(mp)mp.textContent=String(S.matchPoints[S.seat]||0);
  }
  setInterval(renderTurnTimer,250);
  function applyTimer(m){
    if(Object.prototype.hasOwnProperty.call(m,"deadline"))S.deadline=Number(m.deadline)||0;
+   if(Object.prototype.hasOwnProperty.call(m,"timerEnabled"))S.timerEnabled=m.timerEnabled!==false;
    if(Array.isArray(m.misses))S.misses=m.misses;
    if(Array.isArray(m.matchPoints))S.matchPoints=m.matchPoints;
    renderTurnTimer();
@@ -246,7 +299,8 @@
  async function createRoom(){
    setErr("#createOnlineError","");S.matchMode="room";
    S.name=cleanName(document.querySelector("#createPlayerName")?.value);
-   try{await connect();send({type:"create_room",name:S.name,...profilePayload()})}
+   S.timerEnabled=document.querySelector("#createTimerMode")?.value!=="off";
+   try{await connect();send({type:"create_room",name:S.name,timerEnabled:S.timerEnabled,...profilePayload()})}
    catch(e){setErr("#createOnlineError",`${e.message}. Проверьте адрес онлайн-сервера.`)}
  }
  async function joinRoom(){
@@ -264,16 +318,17 @@
  function setRandomForm(searching){
    S.randomSearching=!!searching;
    const find=document.querySelector("#findRandomBtn"),cancel=document.querySelector("#cancelRandomBtn");
-   const name=document.querySelector("#randomPlayerName"),size=document.querySelector("#randomPlayerCount");
+   const name=document.querySelector("#randomPlayerName"),size=document.querySelector("#randomPlayerCount"),timerMode=document.querySelector("#randomTimerMode");
    if(find)find.disabled=searching;if(cancel)cancel.style.display=searching?"inline-block":"none";
-   if(name)name.disabled=searching;if(size)size.disabled=searching;
+   if(name)name.disabled=searching;if(size)size.disabled=searching;if(timerMode)timerMode.disabled=searching;
  }
  async function findRandom(){
    setErr("#randomOnlineError","");
    S.name=cleanName(document.querySelector("#randomPlayerName")?.value);
    S.randomSize=Math.max(2,Math.min(4,Number(document.querySelector("#randomPlayerCount")?.value)||2));
+   S.timerEnabled=document.querySelector("#randomTimerMode")?.value!=="off";
    S.matchMode="random";setRandomForm(true);setRandomStatus("Подключаемся к серверу…",true);
-   try{await connect();send({type:"random_queue",name:S.name,size:S.randomSize,...profilePayload()});setRandomStatus("Ищем случайных соперников…",true)}
+   try{await connect();send({type:"random_queue",name:S.name,size:S.randomSize,timerEnabled:S.timerEnabled,...profilePayload()});setRandomStatus(S.timerEnabled?"Ищем соперников с таймером 25 секунд…":"Ищем соперников без таймера…",true)}
    catch(e){setRandomForm(false);setRandomStatus("");setErr("#randomOnlineError",`${e.message}. Проверьте адрес онлайн-сервера.`)}
  }
  function cancelRandom(showMenu=false){
@@ -286,7 +341,7 @@
    if(S.connected&&S.code)send({type:"leave_room",code:S.code,forfeit:false});
    S.manualClose=true;try{S.socket?.close()}catch{}
    clearTimeout(S.reconnectTimer);
-   S.socket=null;S.active=false;S.connected=false;S.started=false;S.code=null;S.token=null;S.seat=null;S.host=false;S.players=[];S.actionSeat=null;S.pendingStart=false;S.lastVersion=0;S.randomSearching=false;S.matchMode="room";S.deadline=0;S.misses=[];S.matchPoints=[];
+   S.socket=null;S.active=false;S.connected=false;S.started=false;S.code=null;S.token=null;S.seat=null;S.host=false;S.players=[];S.actionSeat=null;S.pendingStart=false;S.lastVersion=0;S.randomSearching=false;S.matchMode="room";S.deadline=0;S.misses=[];S.matchPoints=[];S.timerEnabled=true;S.chatHistory=[];
    clearSession();gameMode="local";setChatVisible(false);
    if(showMenu){closeGameMenus();document.querySelector("#mainMenu")?.classList.add("show")}
  }
@@ -310,6 +365,8 @@
  function acceptRoomMessage(m,mode){
    S.active=true;S.connected=true;S.randomSearching=false;S.matchMode=mode||S.matchMode;setRandomForm(false);
    S.code=m.code;S.token=m.token;S.seat=m.seat;S.host=!!m.host;S.players=m.players||[];S.started=!!m.started;S.lastVersion=m.version||0;S.deadline=m.deadline||0;S.misses=m.misses||[];S.matchPoints=m.matchPoints||[];
+   if(Object.prototype.hasOwnProperty.call(m,"timerEnabled"))S.timerEnabled=m.timerEnabled!==false;
+   if(Array.isArray(m.chatHistory))setChatHistory(m.chatHistory);
    saveSession();showLobby();
    if(m.started&&m.state){
      S.started=true;setChatVisible(true);
@@ -328,14 +385,20 @@
    }
    if(m.type==="random_waiting"){
      S.randomSearching=true;S.randomSize=m.size||S.randomSize;
-     setRandomForm(true);setRandomStatus(`Ищем игроков: ${m.waiting||1} из ${m.size||S.randomSize}. Ваша позиция в очереди: ${m.position||1}.`,true);return;
+     if(Object.prototype.hasOwnProperty.call(m,"timerEnabled"))S.timerEnabled=m.timerEnabled!==false;
+     setRandomForm(true);setRandomStatus(`Ищем игроков ${S.timerEnabled?"с таймером":"без таймера"}: ${m.waiting||1} из ${m.size||S.randomSize}. Ваша позиция в очереди: ${m.position||1}.`,true);return;
    }
    if(m.type==="random_cancelled"){S.randomSearching=false;setRandomForm(false);setRandomStatus("Поиск отменён.",false);return}
    if(m.type==="random_matched"){acceptRoomMessage(m,"random");return}
    if(m.type==="room_created"||m.type==="room_joined"||m.type==="room_reconnected"){acceptRoomMessage(m,"room");return}
    if(m.type==="seat_update"){S.seat=m.seat;S.host=!!m.host;S.players=m.players||S.players;renderLobby();return}
-   if(m.type==="room_update"){S.players=m.players||S.players;S.host=!!S.players.find(p=>p.seat===S.seat)?.host;S.started=!!m.started;applyTimer(m);applyAutoControl(m);renderLobby();return}
+   if(m.type==="room_update"){
+     S.players=m.players||S.players;S.host=!!S.players.find(p=>p.seat===S.seat)?.host;S.started=!!m.started;
+     if(Array.isArray(m.chatHistory))setChatHistory(m.chatHistory);
+     applyTimer(m);applyAutoControl(m);renderLobby();return
+   }
    if(m.type==="chat_message"){
+     appendChatHistory(m);
      showChatBubble(m);
      return;
    }
@@ -343,6 +406,7 @@
      S.started=true;setChatVisible(true);S.actionSeat=null;S.pendingStart=false;S.lastVersion=m.version||S.lastVersion;
      if(Number.isInteger(m.seat))S.seat=m.seat;
      if(Array.isArray(m.players))S.players=m.players;
+     if(Array.isArray(m.chatHistory))setChatHistory(m.chatHistory);
      startOnlineGameState(m.state,m.status||"Жребий цветов проведён. Начинается партия.");applyTimer(m);applyAutoControl(m);refreshControls();maybeContinueAutoTurn();return;
    }
    if(m.type==="roll_result"){

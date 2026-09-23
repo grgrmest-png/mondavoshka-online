@@ -750,22 +750,29 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
 
  if(pc.state!=="track"||trapOnly)return null;
 
- // Маршрут строится ПОШАГОВО. При первом возвращении к своей БАЗЕ фишка
- // НЕ обязана становиться на базу: следующий шаг сразу переводит её в первую клетку Домика.
+ // Маршрут строится ПОШАГОВО.
+ // После полного круга фишка ОБЯЗАТЕЛЬНО проходит через собственную клетку БАЗА.
+ // Если ход закончился на БАЗЕ — фишка остаётся там. Со следующего шага
+ // она поворачивает в первую клетку внутреннего Домика. Второй круг невозможен.
  const route=[];
  let track=pc.track;
+ let progress=Math.max(0,Number(pc.progress)||0);
  let inHome=false;
  let homeIndex=-1;
  for(let k=1;k<=steps;k++){
    if(!inHome){
-     const next=(track-1+TRACK.length)%TRACK.length;
-     if(next===START[pl.id] && track!==START[pl.id]){
+     // Только что вышедшая из двора фишка стоит на БАЗЕ с progress===0
+     // и должна начать внешний круг. Вернувшаяся на БАЗУ имеет progress>0
+     // и следующим шагом обязана повернуть внутрь.
+     if(track===START[pl.id] && progress>0){
        inHome=true;
        homeIndex=0;
        if(homeOcc(pc.owner,0,pc.id))return null;
        route.push({kind:"home",index:0});
      }else{
+       const next=(track-1+TRACK.length)%TRACK.length;
        track=next;
+       progress++;
        route.push({kind:"track",index:track});
      }
    }else{
