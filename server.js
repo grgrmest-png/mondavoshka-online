@@ -9,6 +9,9 @@ const COLOR_SETS={2:["Красный","Синий"],3:["Красный","Чёр�
 const rooms=new Map(),randomQueue=[],profiles=new Map(),usedPurchaseTokens=new Set();
 const COLORS=["Красный","Чёрный","Синий","Бело-синий"];
 const POINT_SKINS=new Set(["default","emerald","violet","gold","orange","pink","lime","ice","silver","burgundy","turquoise"]);
+const POINT_TABLES=new Map([["table_classic",0],["table_ice",500],["table_stone",500],["table_neon",600],["table_north",600]]);
+const POINT_DICE=new Map([["dice_ivory",0],["dice_gold",300],["dice_ice",300],["dice_obsidian",300],["dice_ruby",300]]);
+const ACHIEVEMENT_IDS=new Set(["first_home","first_capture","triple_kush","hunter3","trap_escape","kush_master","first_win","full_house"]);
 const PREMIUM_PRODUCTS={
  skin_barcelona:"club_barcelona",
  skin_real_madrid:"club_real_madrid",
@@ -48,20 +51,29 @@ function safeChatText(x){return String(x||"").replace(/[\u0000-\u001f\u007f]/g,"
 function timerEnabledValue(v){return !(v===false||v===0||v==="0"||String(v).toLowerCase()==="false"||String(v).toLowerCase()==="off")}
 function safeProfileId(x){return String(x||"").replace(/[^a-zA-Z0-9_.:-]/g,"").slice(0,120)}
 function safeSkin(x){const s=String(x||"default");return POINT_SKINS.has(s)||Object.values(PREMIUM_PRODUCTS).includes(s)?s:"default"}
+function safeTable(x){const s=String(x||"table_classic");return POINT_TABLES.has(s)?s:"table_classic"}
+function safeDice(x){const s=String(x||"dice_ivory");return POINT_DICE.has(s)?s:"dice_ivory"}
+function safeAchievement(x){const s=String(x||"");return ACHIEVEMENT_IDS.has(s)?s:null}
+function safeAvatar(x){const s=String(x||"animal:tiger");if(/^animal:(tiger|lion|bear|wolf|eagle|fox)$/.test(s))return s;if(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(s)&&s.length<=18000)return s;return "animal:tiger"}
 function getProfile(id,name=null,seed=null){
  id=safeProfileId(id)||("guest-"+crypto.randomBytes(8).toString("hex"));
  let p=profiles.get(id);
  if(!p){
-   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),owned:["default"],equipped:"default",updatedAt:Date.now()};
+   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),owned:["default"],equipped:"default",avatar:safeAvatar(seed?.avatar),ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],updatedAt:Date.now()};
    if(Array.isArray(seed?.owned))p.owned=[...new Set(["default",...seed.owned.map(safeSkin)])];
    if(seed?.equipped&&p.owned.includes(safeSkin(seed.equipped)))p.equipped=safeSkin(seed.equipped);
+   if(Array.isArray(seed?.ownedTables))p.ownedTables=[...new Set(["table_classic",...seed.ownedTables.map(safeTable)])];
+   if(seed?.equippedTable&&p.ownedTables.includes(safeTable(seed.equippedTable)))p.equippedTable=safeTable(seed.equippedTable);
+   if(Array.isArray(seed?.ownedDice))p.ownedDice=[...new Set(["dice_ivory",...seed.ownedDice.map(safeDice)])];
+   if(seed?.equippedDice&&p.ownedDice.includes(safeDice(seed.equippedDice)))p.equippedDice=safeDice(seed.equippedDice);
+   if(Array.isArray(seed?.achievements))p.achievements=[...new Set(seed.achievements.map(safeAchievement).filter(Boolean))];
    profiles.set(id,p);saveProfiles();
  }else{
-   if(name)p.name=safeName(name);p.updatedAt=Date.now();
+   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.updatedAt=Date.now();
  }
  return p;
 }
-function pubProfile(p){return {id:p.id,name:p.name,rating:p.rating||0,balance:p.balance||0,wins:p.wins||0,games:p.games||0,owned:p.owned||["default"],equipped:p.equipped||"default"}}
+function pubProfile(p){return {id:p.id,name:p.name,rating:p.rating||0,balance:p.balance||0,wins:p.wins||0,games:p.games||0,owned:p.owned||["default"],equipped:p.equipped||"default",avatar:safeAvatar(p.avatar),ownedTables:p.ownedTables||["table_classic"],equippedTable:safeTable(p.equippedTable),ownedDice:p.ownedDice||["dice_ivory"],equippedDice:safeDice(p.equippedDice),achievements:(p.achievements||[]).map(safeAchievement).filter(Boolean)}}
 function leaderboard(limit=30){return [...profiles.values()].sort((a,b)=>(b.rating||0)-(a.rating||0)||(b.wins||0)-(a.wins||0)).slice(0,limit).map(pubProfile)}
 function verifySignedBlob(signature){
  const key=String(process.env.YANDEX_GAMES_SECRET||"");
@@ -97,7 +109,7 @@ async function handleApi(req,res,u){
    const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
    json(res,200,{profile:pubProfile(getProfile(id,null))});return true
  }
- if(req.method==="POST"&&["/api/sync-profile","/api/buy-skin","/api/equip-skin"].includes(u.pathname)){
+ if(req.method==="POST"&&["/api/sync-profile","/api/buy-skin","/api/equip-skin","/api/buy-cosmetic","/api/equip-cosmetic"].includes(u.pathname)){
    let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
    const id=safeProfileId(body.id);if(!id){json(res,400,{error:"profile id required"});return true}
    if(u.pathname==="/api/sync-profile"){
@@ -108,6 +120,12 @@ async function handleApi(req,res,u){
        p.games=Math.max(p.games||0,Math.max(0,+body.games||0));
        if(Array.isArray(body.owned))p.owned=[...new Set([...(p.owned||["default"]),...body.owned.map(safeSkin)])];
        if(body.equipped&&p.owned.includes(safeSkin(body.equipped)))p.equipped=safeSkin(body.equipped);
+       if(body.avatar)p.avatar=safeAvatar(body.avatar);
+       if(Array.isArray(body.ownedTables))p.ownedTables=[...new Set([...(p.ownedTables||["table_classic"]),...body.ownedTables.map(safeTable)])];
+       if(body.equippedTable&&p.ownedTables.includes(safeTable(body.equippedTable)))p.equippedTable=safeTable(body.equippedTable);
+       if(Array.isArray(body.ownedDice))p.ownedDice=[...new Set([...(p.ownedDice||["dice_ivory"]),...body.ownedDice.map(safeDice)])];
+       if(body.equippedDice&&p.ownedDice.includes(safeDice(body.equippedDice)))p.equippedDice=safeDice(body.equippedDice);
+       if(Array.isArray(body.achievements))p.achievements=[...new Set([...(p.achievements||[]),...body.achievements.map(safeAchievement).filter(Boolean)])];
        // Баланс с клиента принимаем вверх только как восстановление после нового деплоя.
        p.balance=Math.max(p.balance||0,Math.max(0,+body.balance||0));
        saveProfiles();
@@ -115,6 +133,25 @@ async function handleApi(req,res,u){
      json(res,200,{profile:pubProfile(p)});return true
    }
    const p=getProfile(id,body.name||null);
+   if(u.pathname==="/api/buy-cosmetic"||u.pathname==="/api/equip-cosmetic"){
+     const kind=body.kind==="table"?"table":body.kind==="dice"?"dice":"";
+     if(!kind){json(res,400,{error:"Неизвестный вид оформления."});return true}
+     const item=kind==="table"?safeTable(body.itemId):safeDice(body.itemId);
+     const prices=kind==="table"?POINT_TABLES:POINT_DICE;
+     const ownedKey=kind==="table"?"ownedTables":"ownedDice",equippedKey=kind==="table"?"equippedTable":"equippedDice";
+     p[ownedKey]=Array.isArray(p[ownedKey])?p[ownedKey]:(kind==="table"?["table_classic"]:["dice_ivory"]);
+     if(u.pathname==="/api/buy-cosmetic"){
+       const price=prices.get(item);
+       if(price==null||price<=0){json(res,400,{error:"Этот предмет не продаётся."});return true}
+       if(!p[ownedKey].includes(item)){
+         if((p.balance||0)<price){json(res,400,{error:`Нужно ${price} очков на балансе.`});return true}
+         p.balance-=price;p[ownedKey].push(item);
+       }
+       p[equippedKey]=item;saveProfiles();json(res,200,{profile:pubProfile(p)});return true
+     }
+     if(!p[ownedKey].includes(item)){json(res,400,{error:"Этот предмет ещё не куплен."});return true}
+     p[equippedKey]=item;saveProfiles();json(res,200,{profile:pubProfile(p)});return true
+   }
    const skin=safeSkin(body.skinId);
    if(u.pathname==="/api/buy-skin"){
      if(!POINT_SKINS.has(skin)||skin==="default"){json(res,400,{error:"Эта фишка не продаётся за очки."});return true}
@@ -160,7 +197,7 @@ function sendControl(ws,opcode,payload=Buffer.alloc(0)){if(!ws||ws.destroyed)ret
 function roomCode(){for(let i=0;i<50;i++){const c=String(crypto.randomInt(100000,1000000));if(!rooms.has(c))return c}throw new Error("code")}
 function token(){return crypto.randomBytes(18).toString("hex")}
 function roomColors(room){return COLOR_SETS[room.state?.players?.length||room.players.length]||COLOR_SETS[4]}
-function playerList(room){const cs=roomColors(room);return room.players.map(p=>({seat:p.seat,name:p.name,connected:p.bot?true:!!p.connected,bot:!!p.bot,host:!!p.host,color:cs[p.seat]||COLORS[p.seat],profileId:p.profileId||null,skinId:p.skinId||"default",rating:p.profileId?(profiles.get(p.profileId)?.rating||0):0,eliminated:!!room.state?.players?.[p.seat]?.eliminated,misses:room.misses?.[p.seat]||0})).sort((a,b)=>a.seat-b.seat)}
+function playerList(room){const cs=roomColors(room);return room.players.map(p=>({seat:p.seat,name:p.name,connected:p.bot?true:!!p.connected,bot:!!p.bot,host:!!p.host,color:cs[p.seat]||COLORS[p.seat],profileId:p.profileId||null,skinId:p.skinId||"default",avatar:safeAvatar(p.avatar||(p.profileId?profiles.get(p.profileId)?.avatar:null)),rating:p.profileId?(profiles.get(p.profileId)?.rating||0):0,eliminated:!!room.state?.players?.[p.seat]?.eliminated,misses:room.misses?.[p.seat]||0})).sort((a,b)=>a.seat-b.seat)}
 function broadcast(room,obj){for(const p of room.players)if(p.connected&&p.ws)send(p.ws,obj)}
 function roomUpdate(room){broadcast(room,{type:"room_update",code:room.code,players:playerList(room),started:room.started,deadline:room.deadline||0,misses:room.misses||[],matchPoints:room.matchPoints||[],timerEnabled:room.timerEnabled!==false,chatHistory:room.chatHistory||[],autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat})}
 function err(ws,message){send(ws,{type:"error",message})}
@@ -205,9 +242,9 @@ function removeFromRandomQueue(ws,notify=true){
 }
 function playerFromMessage(m,seat,host,ws){
  const profileId=safeProfileId(m.profileId);const p=profileId?getProfile(profileId,m.name||"Игрок",{rating:m.rating||0}):null;
- return {seat,name:safeName(m.name),token:token(),host,connected:true,ws,profileId:profileId||null,skinId:safeSkin(m.skinId||(p?.equipped)||"default")};
+ return {seat,name:safeName(m.name),token:token(),host,connected:true,ws,profileId:profileId||null,skinId:safeSkin(m.skinId||(p?.equipped)||"default"),avatar:safeAvatar(m.avatar||(p?.avatar)||"animal:tiger")};
 }
-function botPlayer(i){return {seat:-1,name:`Компьютер ${i}`,token:`bot-${crypto.randomBytes(8).toString("hex")}`,host:false,connected:true,ws:null,profileId:null,skinId:"default",bot:true}}
+function botPlayer(i){return {seat:-1,name:`Компьютер ${i}`,token:`bot-${crypto.randomBytes(8).toString("hex")}`,host:false,connected:true,ws:null,profileId:null,skinId:"default",avatar:"animal:bear",bot:true}}
 function shufflePlayersForColors(room){
  for(let i=room.players.length-1;i>0;i--){const j=crypto.randomInt(0,i+1);[room.players[i],room.players[j]]=[room.players[j],room.players[i]]}
  room.players.forEach((p,i)=>p.seat=i);
@@ -244,7 +281,7 @@ function tryRandomMatch(size,timerEnabled=true){
 function enqueueRandom(ws,m){
  if(ws._room)return err(ws,"Вы уже находитесь в комнате.");removeFromRandomQueue(ws,false);
  const size=queueSize(m.size),timerEnabled=timerEnabledValue(m.timerEnabled);
- const entry={ws,name:safeName(m.name),size,timerEnabled,queuedAt:Date.now(),profileId:safeProfileId(m.profileId),skinId:safeSkin(m.skinId),rating:+m.rating||0};
+ const entry={ws,name:safeName(m.name),size,timerEnabled,queuedAt:Date.now(),profileId:safeProfileId(m.profileId),skinId:safeSkin(m.skinId),avatar:safeAvatar(m.avatar),rating:+m.rating||0};
  randomQueue.push(entry);ws._randomQueued=true;ws._randomSize=size;ws._randomTimerEnabled=timerEnabled;
  const active=queueEntries(size,timerEnabled);
  send(ws,{type:"random_waiting",size,timerEnabled,waiting:active.length,position:active.length});tryRandomMatch(size,timerEnabled);
@@ -482,7 +519,7 @@ function onMessage(ws,m){
  if(m.type==="reconnect_room"){
    removeFromRandomQueue(ws);const room=rooms.get(String(m.code||""));if(!room)return err(ws,"Комната больше не существует.");
    const p=room.players.find(x=>x.token===m.token);if(!p)return err(ws,"Не удалось восстановить место игрока.");
-   p.name=safeName(m.name||p.name);if(m.profileId)p.profileId=safeProfileId(m.profileId);if(m.skinId)p.skinId=safeSkin(m.skinId);attach(ws,p,room);room.lastActive=Date.now();
+   p.name=safeName(m.name||p.name);if(m.profileId)p.profileId=safeProfileId(m.profileId);if(m.skinId)p.skinId=safeSkin(m.skinId);if(m.avatar)p.avatar=safeAvatar(m.avatar);attach(ws,p,room);room.lastActive=Date.now();
    send(ws,{type:"room_reconnected",code:room.code,token:p.token,seat:p.seat,host:p.host,players:playerList(room),started:room.started,state:room.state,status:room.status,version:room.version,deadline:room.deadline,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});roomUpdate(room);return;
  }
  const room=rooms.get(String(m.code||ws._room||""));if(!room)return err(ws,"Комната не найдена.");
@@ -628,4 +665,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Mondavoshka Online V47: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V48: http://localhost:${PORT}`));
