@@ -102,15 +102,28 @@ function localProfileSeat(){
 function checkLocalAchievements(winnerSeat=null){
  const seat=localProfileSeat();if(seat==null||seat<0)return;
  const s=matchStat(seat);if(!s)return;
- const unlock=window.MondavoshkaProfile?.unlockAchievement;
- if(!unlock)return;
+ const unlock=window.MondavoshkaProfile?.unlockAchievement;if(!unlock)return;
+ if(s.kush>=1)unlock("first_kush");
  if(s.home>=1)unlock("first_home");
+ if(s.home>=3)unlock("home3");
  if(s.captures>=1)unlock("first_capture");
  if(s.captures>=3)unlock("hunter3");
- if(s.tripleKush>=1)unlock("triple_kush");
+ if(s.captures>=5)unlock("jailer5");
+ if(s.traps>=1)unlock("trap_visit");
+ if(s.traps>=3)unlock("trap_regular");
  if(s.trapExits>=1)unlock("trap_escape");
+ if(s.tripleKush>=1)unlock("triple_kush");
  if(s.kush>=5)unlock("kush_master");
- if(winnerSeat===seat){unlock("first_win");if(s.home>=5)unlock("full_house")}
+ if(s.kush>=8)unlock("kush_legend");
+ if(s.moves>=20)unlock("marathon20");
+ if(s.moves>=30)unlock("marathon30");
+ if(winnerSeat===seat){
+   unlock("first_win");
+   if(s.home>=5)unlock("full_house");
+   if((s.traps||0)===0)unlock("clean_win");
+   if((s.captures||0)>=3)unlock("aggressive_win");
+   if((s.captures||0)===0)unlock("calm_win");
+ }
 }
 function showGameEvent(text,kind="generic",sub=""){
  const layer=$("#gameEventLayer");if(!layer)return;
@@ -134,15 +147,18 @@ function matchTitle(s){
 function renderPostMatchStats(winnerSeat=null){
  const box=$("#postMatchStats");if(!box||!g)return;
  ensureMatchStats();box.replaceChildren();
- const title=document.createElement("h3");title.textContent="Статистика партии";box.appendChild(title);
+ const title=document.createElement("h3");title.textContent="Статистика и титулы партии";box.appendChild(title);
  const grid=document.createElement("div");grid.className="postStatsGrid";
  g.players.forEach((pl,seat)=>{
    const s=g.matchStats[seat]||{};const card=document.createElement("div");card.className="postStatCard"+(seat===winnerSeat?" winner":"");
    const top=document.createElement("div");top.className="postStatTop";
    const av=document.createElement("div");av.className=`postStatAvatar seatRing-${pl.id}`;
    const onlineP=window.MondavoshkaOnline?.players?.find?.(x=>x.seat===seat);window.MondavoshkaProfile?.paintAvatar?.(av,onlineP?.avatar||pl.avatar||(pl.bot?"animal:bear":"animal:tiger"),pl.bot?"🤖":"🐯");
-   const nm=document.createElement("div");const b=document.createElement("b");b.textContent=pl.playerName||pl.name;const sm=document.createElement("small");sm.textContent=`${pl.name} · ${matchTitle(s)}`;nm.append(b,sm);top.append(av,nm);card.appendChild(top);
-   const vals=document.createElement("div");vals.className="postStatValues";vals.innerHTML=`<span>⛓️ <b>${s.captures||0}</b><small>плен</small></span><span>🎲 <b>${s.kush||0}</b><small>куш</small></span><span>🕳️ <b>${s.traps||0}</b><small>ловушки</small></span><span>🏠 <b>${s.home||0}</b><small>Домик</small></span>`;card.appendChild(vals);grid.appendChild(card)
+   const nm=document.createElement("div");const b=document.createElement("b");b.textContent=(seat===winnerSeat?"🏆 ":"")+(pl.playerName||pl.name);const sm=document.createElement("small");sm.textContent=pl.name;nm.append(b,sm);top.append(av,nm);card.appendChild(top);
+   const titleBadge=document.createElement("div");titleBadge.className="postTitleBadge";titleBadge.textContent=`🏅 ${matchTitle(s)}`;card.appendChild(titleBadge);
+   const vals=document.createElement("div");vals.className="postStatValues";
+   vals.innerHTML=`<span>👣 <b>${s.moves||0}</b><small>ходы</small></span><span>⛓️ <b>${s.captures||0}</b><small>плен</small></span><span>🎲 <b>${s.kush||0}</b><small>куши</small></span><span>🕳️ <b>${s.traps||0}</b><small>ловушки</small></span><span>🧭 <b>${s.trapExits||0}</b><small>выходы</small></span><span>🏠 <b>${s.home||0}</b><small>Домик</small></span>`;
+   card.appendChild(vals);grid.appendChild(card);
  });
  box.appendChild(grid);
 }
@@ -435,6 +451,7 @@ function buildGameState(n,wish=selectedWish){
    doubleStreakSeat:null,
    tripleKushPending:false,
    matchStats:colorSet.map(()=>({moves:0,captures:0,traps:0,trapExits:0,kush:0,tripleKush:0,home:0})),
+   firstBloodDone:false,
 
    forfeit:wish
  };
@@ -1510,8 +1527,11 @@ function scheduleBotRoll(delay=720){
 async function capture(pc, captorSide){
   sfxCapture();
   const captorOwner=g.players.find(x=>x.id===captorSide)?.owner;
+  const firstKill=!g.firstBloodDone;
+  g.firstBloodDone=true;
   if(Number.isInteger(captorOwner))bumpStat(captorOwner,"captures");
-  showGameEvent("ПЛЕН!","capture","Фишка соперника захвачена");
+  if(firstKill)showGameEvent("ПЕРВОЕ УБИЙСТВО!","firstkill","Первая фишка соперника выбита в этой партии");
+  else showGameEvent("ПЛЕН!","capture","Фишка соперника захвачена");
   const pl=g.players[pc.owner];
   const p=pos(pc,pl);
   const el=svg.querySelector(`[data-id="${pc.id}"]`);

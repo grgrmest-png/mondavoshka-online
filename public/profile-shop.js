@@ -51,14 +51,31 @@
   {id:"dice_ruby",name:"Рубиновые",price:300,preview:"linear-gradient(145deg,#ff7a86,#851321)"}
  ];
  const ACHIEVEMENTS=[
-  {id:"first_home",icon:"🏠",name:"Домой!",text:"Завести первую фишку в Домик"},
-  {id:"first_capture",icon:"⛓️",name:"Первый плен",text:"Взять первую фишку соперника"},
-  {id:"triple_kush",icon:"🔥",name:"Три куша",text:"Выбросить 3 куша подряд"},
-  {id:"hunter3",icon:"🎯",name:"Охотник",text:"Взять 3 фишки за одну партию"},
-  {id:"trap_escape",icon:"🧭",name:"Выход найден",text:"Выбраться из ловушки"},
-  {id:"kush_master",icon:"🎲",name:"Король кушей",text:"Выбросить 5 кушей за одну партию"},
-  {id:"first_win",icon:"🏆",name:"Первая победа",text:"Выиграть первую партию"},
-  {id:"full_house",icon:"👑",name:"Полный дом",text:"Завести все 5 фишек в Домик"}
+  {id:"first_kush",icon:"🎲",name:"Первый куш",text:"Впервые выбросить дубль",reward:10},
+  {id:"first_home",icon:"🏠",name:"Домой!",text:"Завести первую фишку в Домик",reward:15},
+  {id:"home3",icon:"🏘️",name:"Почти дома",text:"Завести 3 фишки в Домик за партию",reward:25},
+  {id:"first_capture",icon:"⛓️",name:"Первый плен",text:"Взять первую фишку соперника",reward:20},
+  {id:"hunter3",icon:"🎯",name:"Охотник",text:"Взять 3 фишки за одну партию",reward:35},
+  {id:"jailer5",icon:"🔒",name:"Тюремщик",text:"Взять 5 фишек за одну партию",reward:60},
+  {id:"trap_visit",icon:"🕳️",name:"Вот это влип",text:"Впервые попасть в ловушку",reward:10},
+  {id:"trap_escape",icon:"🧭",name:"Выход найден",text:"Выбраться из ловушки",reward:20},
+  {id:"trap_regular",icon:"💩",name:"Завсегдатай",text:"Попасть в ловушку 3 раза за партию",reward:25},
+  {id:"triple_kush",icon:"🔥",name:"Три куша",text:"Выбросить 3 куша подряд",reward:50},
+  {id:"kush_master",icon:"👑",name:"Король кушей",text:"Выбросить 5 кушей за одну партию",reward:40},
+  {id:"kush_legend",icon:"⚡",name:"Легенда кушей",text:"Выбросить 8 кушей за одну партию",reward:70},
+  {id:"marathon20",icon:"🥾",name:"Марафонец",text:"Сделать 20 ходов за одну партию",reward:20},
+  {id:"marathon30",icon:"🏃",name:"Неутомимый",text:"Сделать 30 ходов за одну партию",reward:35},
+  {id:"first_win",icon:"🏆",name:"Первая победа",text:"Выиграть первую партию",reward:50},
+  {id:"full_house",icon:"👑",name:"Полный дом",text:"Завести все 5 фишек в Домик",reward:75},
+  {id:"clean_win",icon:"✨",name:"Чистая победа",text:"Победить, ни разу не попав в ловушку",reward:100},
+  {id:"aggressive_win",icon:"⚔️",name:"Штурм",text:"Победить и взять минимум 3 фишки",reward:80},
+  {id:"calm_win",icon:"🕊️",name:"Миротворец",text:"Победить, не взяв ни одной фишки",reward:80},
+  {id:"games5",icon:"🎮",name:"Втянулся",text:"Сыграть 5 партий",reward:25},
+  {id:"games25",icon:"🧱",name:"Ветеран",text:"Сыграть 25 партий",reward:100},
+  {id:"wins3",icon:"🥉",name:"Серия побед",text:"Одержать 3 победы",reward:60},
+  {id:"wins10",icon:"🥇",name:"Чемпион",text:"Одержать 10 побед",reward:150},
+  {id:"rating500",icon:"⭐",name:"Пятьсот",text:"Достичь рейтинга 500",reward:50},
+  {id:"rating1000",icon:"🌟",name:"Тысячник",text:"Достичь рейтинга 1000",reward:100}
  ];
  const TABLE_VISUALS={
   table_classic:{grain:"#e7c38d",grainLine:"#a86f3b",cellTop:"#f8e2ba",cellMid:"#edcd9a",cellBottom:"#d4a96f",baseTop:"#fff2cf",baseBottom:"#d9ad73",woodTop:"#d49a58",woodMid:"#9d6031",woodBottom:"#6e3c20",center:"#efd7ad",frame:"#3c2112",inner:"#efbd78"},
@@ -69,6 +86,7 @@
  };
  const S={id:null,name:"Игрок",rating:0,balance:0,wins:0,games:0,owned:["default"],equipped:"default",avatar:"animal:tiger",ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],authorized:false,player:null,payments:null,catalog:new Map()};
  let leaderboardDebounce=null;
+ const achievementPending=new Set();
 
  function serverBase(){const ws=String(window.MONDAVOSHKA_WS_URL||"").trim();if(ws)return ws.replace(/^wss:/,"https:").replace(/^ws:/,"http:").replace(/\/ws\/?$/,"");return location.origin}
  function cleanId(v){return String(v||"").replace(/[^a-zA-Z0-9_.:-]/g,"").slice(0,120)}
@@ -79,9 +97,9 @@
  async function waitSdk(ms=3500){const start=Date.now();while(Date.now()-start<ms){if(window.ysdk)return window.ysdk;await new Promise(r=>setTimeout(r,100))}return null}
  async function api(path,opts={}){const res=await fetch(serverBase()+path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})}});if(!res.ok){let msg=await res.text();try{msg=JSON.parse(msg).error||msg}catch{}throw new Error(msg||`HTTP ${res.status}`)}return res.json()}
  async function syncServer(){try{const p=await api("/api/sync-profile",{method:"POST",body:JSON.stringify(snapshot())});applyServerProfile(p.profile||p,false)}catch(e){console.warn("Profile sync failed",e)}}
- function applyServerProfile(p,persist=true){if(!p)return;S.rating=Math.max(0,+p.rating||0);S.balance=Math.max(0,+p.balance||0);S.wins=Math.max(0,+p.wins||0);S.games=Math.max(0,+p.games||0);if(Array.isArray(p.owned))S.owned=[...new Set(["default",...p.owned])];if(p.equipped)S.equipped=p.equipped;if(p.name)S.name=String(p.name).slice(0,24);if(p.avatar)S.avatar=p.avatar;if(Array.isArray(p.ownedTables))S.ownedTables=[...new Set(["table_classic",...p.ownedTables])];if(p.equippedTable)S.equippedTable=p.equippedTable;if(Array.isArray(p.ownedDice))S.ownedDice=[...new Set(["dice_ivory",...p.ownedDice])];if(p.equippedDice)S.equippedDice=p.equippedDice;if(Array.isArray(p.achievements))S.achievements=[...new Set(p.achievements)];saveFallback();renderProfile();renderShop();renderProfileModal();applyCosmetics();if(persist)persistYandex()}
+ function applyServerProfile(p,persist=true){if(!p)return;S.rating=Math.max(0,+p.rating||0);S.balance=Math.max(0,+p.balance||0);S.wins=Math.max(0,+p.wins||0);S.games=Math.max(0,+p.games||0);if(Array.isArray(p.owned))S.owned=[...new Set(["default",...p.owned])];if(p.equipped)S.equipped=p.equipped;if(p.name)S.name=String(p.name).slice(0,24);if(p.avatar)S.avatar=p.avatar;if(Array.isArray(p.ownedTables))S.ownedTables=[...new Set(["table_classic",...p.ownedTables])];if(p.equippedTable)S.equippedTable=p.equippedTable;if(Array.isArray(p.ownedDice))S.ownedDice=[...new Set(["dice_ivory",...p.ownedDice])];if(p.equippedDice)S.equippedDice=p.equippedDice;if(Array.isArray(p.achievements))S.achievements=[...new Set(p.achievements)];saveFallback();renderProfile();renderShop();renderProfileModal();applyCosmetics();if(persist)persistYandex();setTimeout(checkProfileAchievements,0)}
  async function persistYandex(){if(!S.player)return;try{await S.player.setStats({rating:S.rating,pointsBalance:S.balance,wins:S.wins,games:S.games})}catch{}try{await S.player.setData({ownedSkins:S.owned,equippedSkin:S.equipped,partisAvatar:S.avatar,partisOwnedTables:S.ownedTables,partisTable:S.equippedTable,partisOwnedDice:S.ownedDice,partisDice:S.equippedDice,partisAchievements:S.achievements},true)}catch{}if(S.authorized&&window.ysdk?.leaderboards){clearTimeout(leaderboardDebounce);leaderboardDebounce=setTimeout(async()=>{try{const ok=await window.ysdk.isAvailableMethod?.("leaderboards.setScore");if(ok!==false)await window.ysdk.leaderboards.setScore("rating",S.rating)}catch{}},1200)}}
- async function initPlayer(){loadFallback();S.id=fallbackId();const ysdk=await waitSdk();if(ysdk){try{const p=await ysdk.getPlayer();S.player=p;S.id=cleanId(p.getUniqueID?.()||S.id)||S.id;S.authorized=!!p.isAuthorized?.();const nm=String(p.getName?.()||"").trim();if(S.authorized&&nm&&nm!=="unauthorized")S.name=nm.slice(0,24);try{const stats=await p.getStats(["rating","pointsBalance","wins","games"]);S.rating=Math.max(S.rating,+stats.rating||0);S.balance=Math.max(S.balance,+stats.pointsBalance||0);S.wins=Math.max(S.wins,+stats.wins||0);S.games=Math.max(S.games,+stats.games||0)}catch{}try{const data=await p.getData(["ownedSkins","equippedSkin","partisAvatar","partisOwnedTables","partisTable","partisOwnedDice","partisDice","partisAchievements"]);if(Array.isArray(data.ownedSkins))S.owned=[...new Set(["default",...data.ownedSkins])];if(data.equippedSkin)S.equipped=data.equippedSkin;if(data.partisAvatar)S.avatar=data.partisAvatar;if(Array.isArray(data.partisOwnedTables))S.ownedTables=[...new Set(["table_classic",...data.partisOwnedTables])];if(data.partisTable)S.equippedTable=data.partisTable;if(Array.isArray(data.partisOwnedDice))S.ownedDice=[...new Set(["dice_ivory",...data.partisOwnedDice])];if(data.partisDice)S.equippedDice=data.partisDice;if(Array.isArray(data.partisAchievements))S.achievements=[...new Set(data.partisAchievements)]}catch{}}catch(e){console.warn("Yandex player unavailable",e)}}await syncServer();renderProfile();renderShop();renderProfileModal();loadLeaderboard();initPayments();prefillNames();applyCosmetics()}
+ async function initPlayer(){loadFallback();S.id=fallbackId();const ysdk=await waitSdk();if(ysdk){try{const p=await ysdk.getPlayer();S.player=p;S.id=cleanId(p.getUniqueID?.()||S.id)||S.id;S.authorized=!!p.isAuthorized?.();const nm=String(p.getName?.()||"").trim();if(S.authorized&&nm&&nm!=="unauthorized")S.name=nm.slice(0,24);try{const stats=await p.getStats(["rating","pointsBalance","wins","games"]);S.rating=Math.max(S.rating,+stats.rating||0);S.balance=Math.max(S.balance,+stats.pointsBalance||0);S.wins=Math.max(S.wins,+stats.wins||0);S.games=Math.max(S.games,+stats.games||0)}catch{}try{const data=await p.getData(["ownedSkins","equippedSkin","partisAvatar","partisOwnedTables","partisTable","partisOwnedDice","partisDice","partisAchievements"]);if(Array.isArray(data.ownedSkins))S.owned=[...new Set(["default",...data.ownedSkins])];if(data.equippedSkin)S.equipped=data.equippedSkin;if(data.partisAvatar)S.avatar=data.partisAvatar;if(Array.isArray(data.partisOwnedTables))S.ownedTables=[...new Set(["table_classic",...data.partisOwnedTables])];if(data.partisTable)S.equippedTable=data.partisTable;if(Array.isArray(data.partisOwnedDice))S.ownedDice=[...new Set(["dice_ivory",...data.partisOwnedDice])];if(data.partisDice)S.equippedDice=data.partisDice;if(Array.isArray(data.partisAchievements))S.achievements=[...new Set(data.partisAchievements)]}catch{}}catch(e){console.warn("Yandex player unavailable",e)}}await syncServer();await claimStoredAchievementRewards();renderProfile();renderShop();renderProfileModal();loadLeaderboard();initPayments();prefillNames();applyCosmetics();checkProfileAchievements()}
  function publicProfile(){return {id:S.id,name:S.name,skinId:S.equipped,rating:S.rating,avatar:S.avatar}}
  function getSkin(id){return SKINS.find(s=>s.id===id)||COUNTRY_SKINS.find(s=>s.id===id)||CLUB_PRODUCTS.find(x=>x.skinId===id)||SKINS[0]}
  function skinVisual(id){const s=SKINS.find(x=>x.id===id);if(s)return {color:s.color,name:s.name};const country=COUNTRY_SKINS.find(x=>x.id===id);if(country)return {color:country.color,name:country.name,flag:country.flag,emoji:country.emoji};const c=CLUB_PRODUCTS.find(x=>x.skinId===id);if(c)return {name:c.name,...(CLUB_VISUALS[id]||{color:"#bbb",stripe:"#777"})};return {color:null,name:"Классика"}}
@@ -108,8 +126,42 @@
  async function setAvatar(value){S.avatar=value;saveFallback();renderProfile();renderProfileModal();await syncServer();persistYandex()}
  async function photoToAvatar(file){return new Promise((resolve,reject)=>{if(!file||!file.type?.startsWith("image/"))return reject(new Error("Выберите изображение"));if(file.size>8*1024*1024)return reject(new Error("Фото слишком большое"));const fr=new FileReader();fr.onerror=()=>reject(new Error("Не удалось прочитать фото"));fr.onload=()=>{const img=new Image();img.onerror=()=>reject(new Error("Не удалось открыть фото"));img.onload=()=>{const size=64,c=document.createElement("canvas");c.width=c.height=size;const ctx=c.getContext("2d");const scale=Math.max(size/img.width,size/img.height),w=img.width*scale,h=img.height*scale;ctx.drawImage(img,(size-w)/2,(size-h)/2,w,h);let data=c.toDataURL("image/jpeg",.58);if(data.length>14000)data=c.toDataURL("image/jpeg",.42);resolve(data.length<=18000?data:"animal:tiger")};img.src=String(fr.result)};fr.readAsDataURL(file)})}
  async function handleAvatarUpload(file){try{const data=await photoToAvatar(file);await setAvatar(data)}catch(e){alert(e.message||"Не удалось обработать фото")}}
- function renderProfileModal(){paintAvatar(document.querySelector("#profileModalAvatar"),S.avatar);const n=document.querySelector("#profileModalName"),r=document.querySelector("#profileModalRating"),w=document.querySelector("#profileModalWins"),g=document.querySelector("#profileModalGames");if(n)n.textContent=S.name;if(r)r.textContent=S.rating;if(w)w.textContent=S.wins;if(g)g.textContent=S.games;const cc=document.querySelector("#profileCurrentCosmetics");if(cc){const t=TABLES.find(x=>x.id===S.equippedTable)?.name||"Классический";const d=DICE.find(x=>x.id===S.equippedDice)?.name||"Слоновая кость";cc.textContent=`Стол: ${t} · Кубики: ${d}`}const choices=document.querySelector("#avatarChoices");if(choices){choices.innerHTML="";AVATARS.forEach(a=>choices.appendChild(avatarChoiceButton(a)))}const ag=document.querySelector("#achievementGrid");if(ag){ag.innerHTML="";ACHIEVEMENTS.forEach(a=>{const unlocked=S.achievements.includes(a.id);const d=document.createElement("div");d.className="achievementCard"+(unlocked?" unlocked":" locked");d.innerHTML=`<span>${unlocked?a.icon:"🔒"}</span><div><b></b><small></small></div>`;d.querySelector("b").textContent=a.name;d.querySelector("small").textContent=a.text;ag.appendChild(d)})}}
- async function unlockAchievement(id){if(!ACHIEVEMENTS.some(a=>a.id===id)||S.achievements.includes(id))return false;S.achievements.push(id);saveFallback();renderProfileModal();const a=ACHIEVEMENTS.find(x=>x.id===id);const toast=document.querySelector("#ratingToast");if(toast){toast.textContent=`🏅 Достижение: ${a.name}`;toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),2600)}await syncServer();persistYandex();return true}
+ function renderProfileModal(){paintAvatar(document.querySelector("#profileModalAvatar"),S.avatar);const n=document.querySelector("#profileModalName"),r=document.querySelector("#profileModalRating"),w=document.querySelector("#profileModalWins"),g=document.querySelector("#profileModalGames");if(n)n.textContent=S.name;if(r)r.textContent=S.rating;if(w)w.textContent=S.wins;if(g)g.textContent=S.games;const cc=document.querySelector("#profileCurrentCosmetics");if(cc){const t=TABLES.find(x=>x.id===S.equippedTable)?.name||"Классический";const d=DICE.find(x=>x.id===S.equippedDice)?.name||"Слоновая кость";cc.textContent=`Стол: ${t} · Кубики: ${d}`}const choices=document.querySelector("#avatarChoices");if(choices){choices.innerHTML="";AVATARS.forEach(a=>choices.appendChild(avatarChoiceButton(a)))}const ag=document.querySelector("#achievementGrid");if(ag){ag.innerHTML="";ACHIEVEMENTS.forEach(a=>{const unlocked=S.achievements.includes(a.id);const d=document.createElement("div");d.className="achievementCard"+(unlocked?" unlocked":" locked");d.innerHTML=`<span>${unlocked?a.icon:"🔒"}</span><div><b></b><small></small></div>`;d.querySelector("b").textContent=a.name;d.querySelector("small").textContent=a.text;const rw=document.createElement("em");rw.className="achievementReward";rw.textContent=`+${a.reward||0} 💰`;d.querySelector("div").appendChild(rw);ag.appendChild(d)})}}
+ async function claimStoredAchievementRewards(){
+  if(!S.id)return;
+  try{
+   const d=await api("/api/claim-achievement-rewards",{method:"POST",body:JSON.stringify({id:S.id})});
+   if(d?.profile)applyServerProfile(d.profile,false);
+   if((Number(d?.reward)||0)>0){const toast=document.querySelector("#ratingToast");if(toast){toast.textContent=`🏅 +${d.reward} очков за ранее полученные достижения`;toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),3000)}}
+  }catch(e){console.warn("Achievement rewards claim failed",e)}
+ }
+ function checkProfileAchievements(){
+  if(!S.id)return;
+  if(S.games>=5)unlockAchievement("games5");
+  if(S.games>=25)unlockAchievement("games25");
+  if(S.wins>=3)unlockAchievement("wins3");
+  if(S.wins>=10)unlockAchievement("wins10");
+  if(S.rating>=500)unlockAchievement("rating500");
+  if(S.rating>=1000)unlockAchievement("rating1000");
+ }
+ async function unlockAchievement(id){
+  const a=ACHIEVEMENTS.find(x=>x.id===id);
+  if(!a||S.achievements.includes(id)||achievementPending.has(id))return false;
+  achievementPending.add(id);
+  try{
+   const d=await api("/api/unlock-achievement",{method:"POST",body:JSON.stringify({id:S.id,achievementId:id})});
+   if(d?.profile)applyServerProfile(d.profile,false);
+   else if(!S.achievements.includes(id))S.achievements.push(id);
+   saveFallback();renderProfile();renderProfileModal();persistYandex();
+   const reward=Number(d?.reward)||0;
+   const toast=document.querySelector("#ratingToast");
+   if(toast){toast.textContent=`🏅 ${a.name}${reward?` · +${reward} очков`:""}`;toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),2800)}
+   return true;
+  }catch(e){
+   console.warn("Achievement unlock failed",e);
+   return false;
+  }finally{achievementPending.delete(id)}
+ }
  function openModal(id){document.querySelectorAll(".modal").forEach(x=>x.classList.remove("show"));document.querySelector(id)?.classList.add("show")}
  function closeToMenu(){document.querySelectorAll(".modal").forEach(x=>x.classList.remove("show"));document.querySelector("#mainMenu")?.classList.add("show");loadLeaderboard()}
  function awardFromServer(profile,delta,matchPoints,reason=""){applyServerProfile(profile);const el=document.querySelector("#matchPoints");if(el)el.textContent=String(matchPoints||0);const toast=document.querySelector("#ratingToast");if(toast&&delta){toast.textContent=reason||`+${delta} очков за фишку в Домике`;toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),2200)}loadLeaderboard()}

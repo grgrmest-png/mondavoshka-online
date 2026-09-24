@@ -395,10 +395,13 @@
    if(m.type==="room_update"){
      S.players=m.players||S.players;S.host=!!S.players.find(p=>p.seat===S.seat)?.host;S.started=!!m.started;
      if(Array.isArray(m.chatHistory))setChatHistory(m.chatHistory);
+     if(S.started)setChatVisible(true);
      applyTimer(m);applyAutoControl(m);renderLobby();return
    }
    if(m.type==="chat_message"){
-     appendChatHistory(m);
+     setChatVisible(true);
+     if(Array.isArray(m.chatHistory))setChatHistory(m.chatHistory);
+     else appendChatHistory(m);
      showChatBubble(m);
      return;
    }

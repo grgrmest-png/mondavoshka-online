@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Партис — народная игра «Мандавошка»</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Партис V49 — чат, достижения и статистика</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -96,7 +96,7 @@
 <div class="card chatCard" id="chatCard" hidden>
   <div class="chatTitle">
     <b>💬 Чат игроков</b>
-    <small>облако исчезает, история остаётся</small>
+    <small>история общая для всех игроков</small>
   </div>
   <div class="chatHistory" id="chatHistory" aria-live="polite">
     <div class="chatHistoryEmpty">Пока сообщений нет</div>
@@ -172,7 +172,7 @@
         <h3>Выберите аватар</h3>
         <div id="avatarChoices" class="avatarChoices"></div>
         <div class="avatarUploadRow"><input id="avatarUpload" type="file" accept="image/*" hidden><button id="avatarUploadBtn" type="button">📷 Выбрать фото из галереи</button><small>Фото уменьшается до маленькой аватарки перед сохранением.</small></div>
-        <h3>🏅 Достижения</h3>
+        <h3>🏅 Достижения</h3><p class="achievementIntro">За достижения начисляются <b>очки на баланс</b>. Рейтинг от наград не меняется.</p>
         <div id="achievementGrid" class="achievementGrid"></div>
       </div>
     </div>

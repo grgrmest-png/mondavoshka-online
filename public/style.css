@@ -884,3 +884,56 @@ body[data-dice-skin="dice_obsidian"] .die{background:linear-gradient(145deg,#626
 body[data-dice-skin="dice_ruby"] .die{background:linear-gradient(145deg,#ff8791,#8d1423);border-color:#5c0b16;color:#fff}
 
 @media(max-width:700px){.profileHero{align-items:flex-start}.profileModalAvatar{width:68px;height:68px;min-width:68px}.profileModalAvatar span{font-size:38px}.achievementGrid{grid-template-columns:1fr}.seatBadge{width:46px;height:46px;min-width:46px;min-height:46px}.seatAvatar{width:43px;height:43px;border-width:3px}.seatAvatar span{font-size:25px}.gameEvent strong{font-size:26px}.postStatsGrid{grid-template-columns:1fr}.tutorialDialog p{font-size:14px;min-height:112px}.profilePanelActions{width:100%}}
+
+
+/* ==========================================================
+   PARTIS V49 — аватары вне центра, достижения, статистика
+   ========================================================== */
+/* Аватары стоят рядом с пятью стартовыми фишками, а не в центре стороны. */
+.seatBadgeTop{top:8.2%;left:31.5%;transform:translate(-50%,-50%)}
+.seatBadgeBottom{bottom:8.2%;left:68.5%;transform:translate(-50%,50%)}
+.seatBadgeLeft{left:8.2%;top:68.5%;transform:translate(-50%,-50%)}
+.seatBadgeRight{right:8.2%;top:31.5%;transform:translate(50%,-50%)}
+
+.achievementIntro{font-size:12px;margin:-5px 0 10px;opacity:.82}
+.achievementCard{position:relative;align-items:flex-start}
+.achievementCard div{min-width:0;flex:1}
+.achievementReward{display:inline-flex;align-self:flex-start;margin-top:5px;padding:2px 7px;border-radius:999px;background:#d6ad4c;color:#422c13;font-size:10px;font-style:normal;font-weight:900}
+.achievementCard.locked .achievementReward{filter:none;opacity:.75}
+
+.gameEvent-firstkill{border-color:#ff3148;box-shadow:0 0 38px #ff314899,0 8px 25px #0008}
+.gameEvent-firstkill strong{color:#ffd9df;font-size:31px}
+
+/* Вся статистика помещается в окно; на маленьком экране прокручивается само окно, а не обрезается. */
+.victoryModal{overflow:auto;padding:12px}
+.victoryDialog{width:min(820px,96vw);max-width:820px;max-height:94vh;overflow:auto;margin:auto;padding:16px 18px}
+.victoryCup{font-size:58px}
+.victoryDialog h2{font-size:31px;margin:5px 0}
+.victoryDialog p{font-size:15px;margin:5px 0 8px}
+.postMatchStats{width:100%;max-width:none;margin:7px auto}
+.postMatchStats h3{margin:5px 0 8px;font-size:17px}
+.postStatsGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:none;overflow:visible}
+.postStatCard{padding:8px;min-width:0}
+.postStatTop{gap:7px}
+.postStatTop>div:last-child{min-width:0}
+.postStatTop b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.postTitleBadge{margin-top:6px;padding:4px 8px;border-radius:999px;background:#d8aa45;color:#432b12;font-weight:900;font-size:11px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.postStatValues{grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px}
+.postStatValues span{padding:3px 2px}
+.postStatValues b{font-size:13px}
+.postStatValues small{font-size:8px}
+.victoryActions{position:sticky;bottom:-16px;background:linear-gradient(transparent,#f7d9a4 22%);padding-top:13px;padding-bottom:2px}
+
+@media(max-width:700px){
+ .seatBadgeTop{top:8.2%;left:31.5%}.seatBadgeBottom{bottom:8.2%;left:68.5%}.seatBadgeLeft{left:8.2%;top:68.5%}.seatBadgeRight{right:8.2%;top:31.5%}
+ .victoryDialog{width:100%;max-width:100%;max-height:none;padding:12px}
+ .postStatsGrid{grid-template-columns:1fr 1fr;gap:5px}
+ .postStatAvatar{width:32px;height:32px;min-width:32px}.postStatAvatar span{font-size:19px}
+ .postStatTop b{font-size:11px}.postStatTop small{font-size:8px}
+ .postTitleBadge{font-size:9px;padding:3px 5px}
+ .postStatValues small{font-size:7px}.postStatValues b{font-size:11px}
+}
+@media(max-width:440px){
+ .postStatsGrid{grid-template-columns:1fr}
+ .victoryCup{font-size:44px}.victoryDialog h2{font-size:24px}
+}
