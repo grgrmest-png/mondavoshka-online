@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Партис V54 — друзья и уточнение ловушки</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Партис V57 — адаптивный профиль</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -194,39 +194,55 @@
     <div class="modal" id="profileModal">
       <div class="dialog profileDialog">
         <div class="modalTitleRow"><div><h2>👤 Профиль игрока</h2><p>Аватар, статистика, косметика и достижения.</p></div><button class="hubBack" type="button">← В меню</button></div>
-        <div class="profileHero">
-          <div id="profileModalAvatar" class="profileModalAvatar"><span>🐯</span></div>
-          <div><h3 id="profileModalName">Игрок</h3><p>Рейтинг <b id="profileModalRating">0</b> · Победы <b id="profileModalWins">0</b> · Игры <b id="profileModalGames">0</b> · 🔥 Серия <b id="profileModalStreak">0</b></p><small id="profileBestStreak">Лучшая серия: 0</small><small id="profileCurrentCosmetics">Классический стол · стандартные кубики</small></div>
+        <div class="profileDesktopLayout">
+          <aside class="profileLeftPane">
+            <div class="profileHero">
+              <div id="profileModalAvatar" class="profileModalAvatar"><span>🐯</span></div>
+              <div><h3 id="profileModalName">Игрок</h3><p>Рейтинг <b id="profileModalRating">0</b> · Победы <b id="profileModalWins">0</b> · Игры <b id="profileModalGames">0</b> · 🔥 Серия <b id="profileModalStreak">0</b></p><small id="profileBestStreak">Лучшая серия: 0</small><small id="profileCurrentCosmetics">Классический стол · стандартные кубики</small></div>
+            </div>
+
+            <div class="profileSection profileAvatarSection">
+              <h3>Выберите аватар</h3>
+              <div id="avatarChoices" class="avatarChoices"></div>
+              <div class="avatarUploadRow"><input id="avatarUpload" type="file" accept="image/*" hidden><button id="avatarUploadBtn" type="button">📷 Выбрать фото из галереи</button><small>Фото уменьшается до маленькой аватарки перед сохранением.</small></div>
+            </div>
+          </aside>
+
+          <section class="profileRightPane">
+            <div class="profileSection">
+              <div class="profileSocialHead"><h3>👥 Друзья</h3><button id="refreshSocial" type="button">Обновить</button></div>
+              <p class="socialHint">После онлайн-партии соперника можно добавить в друзья. Также игрока можно найти по ID или коду дружбы.</p>
+
+              <div class="friendIdentity">
+                <div><small>Ваш ID игрока</small><strong id="myPlayerId">—</strong><button id="copyPlayerId" type="button">Копировать</button></div>
+                <div><small>Ваш код дружбы</small><strong id="myFriendCode">—</strong><button id="copyFriendCode" type="button">Копировать</button></div>
+              </div>
+
+              <div class="friendSearchBox">
+                <label for="friendSearchInput">Найти друга</label>
+                <div class="friendSearchRow">
+                  <input id="friendSearchInput" type="text" maxlength="120" autocomplete="off" placeholder="ID игрока или код дружбы">
+                  <button id="friendSearchBtn" type="button">Найти</button>
+                </div>
+                <small>Попросите друга прислать свой код дружбы — он короче и удобнее ID.</small>
+                <div id="friendSearchResult" class="friendSearchResult"></div>
+              </div>
+
+              <div id="friendsGrid" class="socialGrid"><div class="ratingLoading">Друзей пока нет.</div></div>
+            </div>
+
+            <div class="profileSection">
+              <h3>🕘 Недавние игроки</h3>
+              <div id="recentPlayersGrid" class="socialGrid"><div class="ratingLoading">Недавних игроков пока нет.</div></div>
+            </div>
+
+            <div class="profileSection">
+              <h3>🏅 Достижения</h3>
+              <p class="achievementIntro">За достижения начисляются <b>очки на баланс</b>. Рейтинг от наград не меняется.</p>
+              <div id="achievementGrid" class="achievementGrid"></div>
+            </div>
+          </section>
         </div>
-        <h3>Выберите аватар</h3>
-        <div id="avatarChoices" class="avatarChoices"></div>
-        <div class="avatarUploadRow"><input id="avatarUpload" type="file" accept="image/*" hidden><button id="avatarUploadBtn" type="button">📷 Выбрать фото из галереи</button><small>Фото уменьшается до маленькой аватарки перед сохранением.</small></div>
-
-        <div class="profileSocialHead"><h3>👥 Друзья</h3><button id="refreshSocial" type="button">Обновить</button></div>
-        <p class="socialHint">После онлайн-партии соперника можно добавить в друзья. Также игрока можно найти по ID или коду дружбы.</p>
-
-        <div class="friendIdentity">
-          <div><small>Ваш ID игрока</small><strong id="myPlayerId">—</strong><button id="copyPlayerId" type="button">Копировать</button></div>
-          <div><small>Ваш код дружбы</small><strong id="myFriendCode">—</strong><button id="copyFriendCode" type="button">Копировать</button></div>
-        </div>
-
-        <div class="friendSearchBox">
-          <label for="friendSearchInput">Найти друга</label>
-          <div class="friendSearchRow">
-            <input id="friendSearchInput" type="text" maxlength="120" autocomplete="off" placeholder="ID игрока или код дружбы">
-            <button id="friendSearchBtn" type="button">Найти</button>
-          </div>
-          <small>Попросите друга прислать свой код дружбы — он короче и удобнее ID.</small>
-          <div id="friendSearchResult" class="friendSearchResult"></div>
-        </div>
-
-        <div id="friendsGrid" class="socialGrid"><div class="ratingLoading">Друзей пока нет.</div></div>
-
-        <h3>🕘 Недавние игроки</h3>
-        <div id="recentPlayersGrid" class="socialGrid"><div class="ratingLoading">Недавних игроков пока нет.</div></div>
-
-        <h3>🏅 Достижения</h3><p class="achievementIntro">За достижения начисляются <b>очки на баланс</b>. Рейтинг от наград не меняется.</p>
-        <div id="achievementGrid" class="achievementGrid"></div>
       </div>
     </div>
 
