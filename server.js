@@ -11,7 +11,13 @@ const COLORS=["Красный","Чёрный","Синий","Бело-синий"
 const POINT_SKINS=new Set(["default","emerald","violet","gold","orange","pink","lime","ice","silver","burgundy","turquoise"]);
 const POINT_TABLES=new Map([["table_classic",0],["table_ice",500],["table_stone",500],["table_neon",600],["table_north",600]]);
 const POINT_DICE=new Map([["dice_ivory",0],["dice_gold",300],["dice_ice",300],["dice_obsidian",300],["dice_ruby",300]]);
-const ACHIEVEMENT_IDS=new Set(["first_home","first_capture","triple_kush","hunter3","trap_escape","kush_master","first_win","full_house"]);
+const ACHIEVEMENT_REWARDS=new Map([
+ ["first_kush",10],["first_home",15],["home3",25],["first_capture",20],["hunter3",35],["jailer5",60],
+ ["trap_visit",10],["trap_escape",20],["trap_regular",25],["triple_kush",50],["kush_master",40],["kush_legend",70],
+ ["marathon20",20],["marathon30",35],["first_win",50],["full_house",75],["clean_win",100],["aggressive_win",80],["calm_win",80],
+ ["games5",25],["games25",100],["wins3",60],["wins10",150],["rating500",50],["rating1000",100]
+]);
+const ACHIEVEMENT_IDS=new Set(ACHIEVEMENT_REWARDS.keys());
 const PREMIUM_PRODUCTS={
  skin_barcelona:"club_barcelona",
  skin_real_madrid:"club_real_madrid",
@@ -59,7 +65,7 @@ function getProfile(id,name=null,seed=null){
  id=safeProfileId(id)||("guest-"+crypto.randomBytes(8).toString("hex"));
  let p=profiles.get(id);
  if(!p){
-   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),owned:["default"],equipped:"default",avatar:safeAvatar(seed?.avatar),ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],updatedAt:Date.now()};
+   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),owned:["default"],equipped:"default",avatar:safeAvatar(seed?.avatar),ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],rewardedAchievements:[],updatedAt:Date.now()};
    if(Array.isArray(seed?.owned))p.owned=[...new Set(["default",...seed.owned.map(safeSkin)])];
    if(seed?.equipped&&p.owned.includes(safeSkin(seed.equipped)))p.equipped=safeSkin(seed.equipped);
    if(Array.isArray(seed?.ownedTables))p.ownedTables=[...new Set(["table_classic",...seed.ownedTables.map(safeTable)])];
@@ -69,9 +75,34 @@ function getProfile(id,name=null,seed=null){
    if(Array.isArray(seed?.achievements))p.achievements=[...new Set(seed.achievements.map(safeAchievement).filter(Boolean))];
    profiles.set(id,p);saveProfiles();
  }else{
-   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.updatedAt=Date.now();
+   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];p.updatedAt=Date.now();
  }
  return p;
+}
+function awardAchievement(p,id){
+ id=safeAchievement(id);if(!id)return {reward:0,newUnlock:false};
+ p.achievements=Array.isArray(p.achievements)?p.achievements:[];
+ p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];
+ const newUnlock=!p.achievements.includes(id);if(newUnlock)p.achievements.push(id);
+ let reward=0;
+ if(!p.rewardedAchievements.includes(id)){
+   reward=Number(ACHIEVEMENT_REWARDS.get(id))||0;
+   if(reward>0)p.balance=(p.balance||0)+reward;
+   p.rewardedAchievements.push(id);
+ }
+ p.updatedAt=Date.now();
+ return {reward,newUnlock};
+}
+function claimAchievementRewards(p){
+ p.achievements=Array.isArray(p.achievements)?p.achievements:[];
+ p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];
+ let total=0;
+ for(const id of p.achievements){
+   const safe=safeAchievement(id);if(!safe||p.rewardedAchievements.includes(safe))continue;
+   total+=Number(ACHIEVEMENT_REWARDS.get(safe))||0;p.rewardedAchievements.push(safe);
+ }
+ if(total>0)p.balance=(p.balance||0)+total;
+ p.updatedAt=Date.now();return total;
 }
 function pubProfile(p){return {id:p.id,name:p.name,rating:p.rating||0,balance:p.balance||0,wins:p.wins||0,games:p.games||0,owned:p.owned||["default"],equipped:p.equipped||"default",avatar:safeAvatar(p.avatar),ownedTables:p.ownedTables||["table_classic"],equippedTable:safeTable(p.equippedTable),ownedDice:p.ownedDice||["dice_ivory"],equippedDice:safeDice(p.equippedDice),achievements:(p.achievements||[]).map(safeAchievement).filter(Boolean)}}
 function leaderboard(limit=30){return [...profiles.values()].sort((a,b)=>(b.rating||0)-(a.rating||0)||(b.wins||0)-(a.wins||0)).slice(0,limit).map(pubProfile)}
@@ -108,6 +139,19 @@ async function handleApi(req,res,u){
  if(req.method==="GET"&&u.pathname==="/api/profile"){
    const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
    json(res,200,{profile:pubProfile(getProfile(id,null))});return true
+ }
+ if(req.method==="POST"&&u.pathname==="/api/unlock-achievement"){
+   let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
+   const id=safeProfileId(body.id),achievementId=safeAchievement(body.achievementId);
+   if(!id||!achievementId){json(res,400,{error:"Некорректное достижение."});return true}
+   const p=getProfile(id,body.name||null);const r=awardAchievement(p,achievementId);saveProfiles();
+   json(res,200,{ok:true,achievementId,reward:r.reward,newUnlock:r.newUnlock,profile:pubProfile(p)});return true
+ }
+ if(req.method==="POST"&&u.pathname==="/api/claim-achievement-rewards"){
+   let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
+   const id=safeProfileId(body.id);if(!id){json(res,400,{error:"profile id required"});return true}
+   const p=getProfile(id,body.name||null),reward=claimAchievementRewards(p);saveProfiles();
+   json(res,200,{ok:true,reward,profile:pubProfile(p)});return true
  }
  if(req.method==="POST"&&["/api/sync-profile","/api/buy-skin","/api/equip-skin","/api/buy-cosmetic","/api/equip-cosmetic"].includes(u.pathname)){
    let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
@@ -550,7 +594,7 @@ function onMessage(ws,m){
    const entry={seat:p.seat,name:p.name,text,ts:now};
    room.chatHistory.push(entry);
    if(room.chatHistory.length>50)room.chatHistory.splice(0,room.chatHistory.length-50);
-   broadcast(room,{type:"chat_message",...entry});
+   broadcast(room,{type:"chat_message",...entry,chatHistory:room.chatHistory.slice(-30)});
    return;
  }
  if(m.type==="start_game"){
@@ -665,4 +709,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V48: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V49: http://localhost:${PORT}`));
