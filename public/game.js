@@ -987,22 +987,56 @@ function canPushHomeChain(owner,idx){
  const occ=homeOcc(owner,idx);
  return !occ||canPushHomeChain(owner,idx+1);
 }
-function canPushOwnForward(pc,seen=new Set()){
+function canPushOwnForward(pc,seen=new Set(),reserved=new Set()){
  if(!pc||pc.state!=="track"||seen.has(pc.id))return false;
  seen.add(pc.id);
  const pl=g.players[pc.owner];
- if(pc.track===START[pl.id]&&pc.lapComplete===true)return canPushHomeChain(pc.owner,0);
+
+ if(pc.track===START[pl.id]&&pc.lapComplete===true){
+   return canPushHomeChain(pc.owner,0);
+ }
+
  const next=(pc.track-1+TRACK.length)%TRACK.length;
+
+ // Клетка может быть зарезервирована фишкой, которая после завершения
+ // текущей цепочки должна в неё прилететь по стрелке.
+ if(reserved.has(next))return false;
+
  if(enemyAt(next,pc.owner))return false;
+
  const own=ownPieceAt(next,pc.owner,pc.id);
- return !own||canPushOwnForward(own,seen);
+ if(own&&!canPushOwnForward(own,seen,reserved))return false;
+
+ // Если один шаг толчка поставил фишку на вход стрелки — она обязана
+ // пройти стрелку полностью. Конечную клетку резервируем за этой фишкой.
+ const jump=DIAG_MAP[next];
+ if(jump){
+   if(reserved.has(jump.to))return false;
+
+   const enemyAtArrowEnd=enemyAt(jump.to,pc.owner);
+   if(enemyAtArrowEnd&&!canCaptureAt(jump.to,pc.owner))return false;
+
+   const ownAtArrowEnd=ownPieceAt(jump.to,pc.owner,pc.id);
+   if(ownAtArrowEnd){
+     const nextReserved=new Set(reserved);
+     nextReserved.add(jump.to);
+     if(!canPushOwnForward(ownAtArrowEnd,seen,nextReserved))return false;
+   }
+ }
+
+ return true;
 }
-function canPushArrowOccupant(pc,jump){
- if(!pc||!jump)return false;
+function canPushArrowOccupant(pc,jump,reserved=new Set()){
+ if(!pc||!jump||reserved.has(jump.to))return false;
+
+ const nextReserved=new Set(reserved);
+ nextReserved.add(jump.to);
+
  const enemy=enemyAt(jump.to,pc.owner);
  if(enemy&&!canCaptureAt(jump.to,pc.owner))return false;
+
  const own=ownPieceAt(jump.to,pc.owner,pc.id);
- return !own||canPushOwnForward(own);
+ return !own||canPushOwnForward(own,new Set(),nextReserved);
 }
 async function pushHomeChain(owner,idx){
  if(idx>4)return false;
@@ -1016,42 +1050,52 @@ async function pushHomeChain(owner,idx){
 }
 // ВАЖНО: этот helper нельзя использовать для обычного столкновения своих фишек.
 // Он применяется только для специальных диагональных стрелок.
-async function pushOwnForward(pc){
+async function pushOwnForward(pc,reserved=new Set()){
  if(!pc||pc.state!=="track")return false;
  const pl=g.players[pc.owner];
 
- // Если вытолкнули фишку, уже завершившую круг и стоящую на своей БАЗЕ,
- // толчок считается следующим шагом и заводит её в Домик.
  if(pc.track===START[pl.id]&&pc.lapComplete===true){
    if(!(await pushHomeChain(pc.owner,0)))return false;
    await animate(pc,[HOME[pl.id][0]],260,"walk");
-   pc.state="home";pc.homeIndex=0;pc.track=null;
+   pc.state="home";
+   pc.homeIndex=0;
+   pc.track=null;
    bumpStat(pc.owner,"home");
    return true;
  }
 
  const next=(pc.track-1+TRACK.length)%TRACK.length;
+ if(reserved.has(next))return false;
+
  const own=ownPieceAt(next,pc.owner,pc.id);
- if(own&&!(await pushOwnForward(own)))return false;
+ if(own&&!(await pushOwnForward(own,reserved)))return false;
  if(enemyAt(next,pc.owner))return false;
+
+ const jump=DIAG_MAP[next];
+ if(jump&&reserved.has(jump.to))return false;
+
  await animate(pc,[TRACK[next]],250,"walk");
  pc.track=next;
  pc.progress=(Number(pc.progress)||0)+1;
  if(next===START[pl.id])pc.lapComplete=true;
+
+ if(jump){
+   renderPieces();
+   const ok=await pushOwnThroughArrow(pc,jump,reserved);
+   if(!ok)return false;
+ }
+
  return true;
 }
-async function pushOwnThroughArrow(pc,jump){
- if(!pc||!jump||pc.state!=="track")return false;
+async function pushOwnThroughArrow(pc,jump,reserved=new Set()){
+ if(!pc||!jump||pc.state!=="track"||reserved.has(jump.to))return false;
 
- // ВАЖНОЕ ПРАВИЛО СТРЕЛКИ:
- // если пришедшая фишка №2 встаёт на вход стрелки, занятый своей фишкой №1,
- // №2 остаётся на входной клетке, а №1 проходит ВЕСЬ нарисованный переход
- // и заканчивает движение ТОЧНО на конечной клетке стрелки (локальная клетка "1").
- // Обычный шаг после перелёта к №1 НЕ добавляется.
  const exactDestination=jump.to;
+ const nextReserved=new Set(reserved);
+ nextReserved.add(exactDestination);
 
  const own=ownPieceAt(exactDestination,pc.owner,pc.id);
- if(own&&!(await pushOwnForward(own)))return false;
+ if(own&&!(await pushOwnForward(own,nextReserved)))return false;
 
  const enemy=enemyAt(exactDestination,pc.owner);
  if(enemy)await capture(enemy,g.players[pc.owner].id);
@@ -1063,7 +1107,6 @@ async function pushOwnThroughArrow(pc,jump){
  sfxArrow();
  await animateBezier(pc,start,control,end,650,"arrow");
 
- // Фиксируем именно конец стрелки. Никакого дополнительного обычного шага.
  pc.track=exactDestination;
  renderPieces();
  return true;
@@ -1217,7 +1260,7 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
 
  if(jump){
    const landingOwn=ownPieceAt(jump.to,pc.owner,pc.id);
-   if(landingOwn&&!canPushOwnForward(landingOwn))return null;
+   if(landingOwn&&!canPushOwnForward(landingOwn,new Set(),new Set([jump.to])))return null;
    if(!landingOwn&&!canCaptureAt(jump.to,pc.owner))return null;
  }
  return {
@@ -1561,9 +1604,13 @@ async function execute(pc,mv){
        // обычный шаг вперёд. Это освобождает клетку для прилетающей фишки.
        const landingOwn=ownPieceAt(jump.to,pc.owner,pc.id);
        if(landingOwn){
-         await pushOwnForward(landingOwn);
+         await pushOwnForward(landingOwn,new Set([jump.to]));
          renderPieces();
-         showGameEvent(window.partisT?.("event.push","ТОЛЧОК!")||"ТОЛЧОК!","push","Своя фишка освобождает выход стрелки");
+         showGameEvent(
+           window.partisT?.("event.push","ТОЛЧОК!")||"ТОЛЧОК!",
+           "push",
+           "Своя фишка сдвинута на вход следующей стрелки и проходит её полностью"
+         );
        }
 
        // Сбрасываем предыдущую анимацию хода: новая SVG-фишка реально стоит
