@@ -6,7 +6,7 @@ const PROFILE_FILE=path.join(__dirname,"profiles.json");
 const USED_PURCHASES_FILE=path.join(__dirname,"used-purchases.json");
 const TURN_MS=25000,MAX_MISSES=3,RECONNECT_GRACE_MS=90000;
 const COLOR_SETS={2:["Красный","Синий"],3:["Красный","Чёрный","Синий"],4:["Красный","Чёрный","Синий","Бело-синий"]};
-const rooms=new Map(),randomQueue=[],profiles=new Map(),usedPurchaseTokens=new Set();
+const rooms=new Map(),randomQueue=[],profiles=new Map(),usedPurchaseTokens=new Set(),pendingInvites=new Map();
 const COLORS=["Красный","Чёрный","Синий","Бело-синий"];
 const POINT_SKINS=new Set(["default","emerald","violet","gold","orange","pink","lime","ice","silver","burgundy","turquoise"]);
 const POINT_TABLES=new Map([["table_classic",0],["table_ice",500],["table_stone",500],["table_neon",600],["table_north",600]]);
@@ -126,6 +126,22 @@ function safeName(x){return String(x||"Игрок").replace(/[<>\u0000-\u001f]/g
 function safeChatText(x){return String(x||"").replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,80)}
 function timerEnabledValue(v){return !(v===false||v===0||v==="0"||String(v).toLowerCase()==="false"||String(v).toLowerCase()==="off")}
 function safeProfileId(x){return String(x||"").replace(/[^a-zA-Z0-9_.:-]/g,"").slice(0,120)}
+function friendCodeFor(id){
+ id=safeProfileId(id);
+ if(!id)return "";
+ return crypto.createHash("sha256").update("partis-friend:"+id).digest("hex").slice(0,8).toUpperCase();
+}
+function normalizeFriendCode(x){return String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,12)}
+function findProfileByIdOrFriendCode(q){
+ const raw=String(q||"").trim();
+ if(!raw)return null;
+ const byId=profiles.get(safeProfileId(raw));
+ if(byId)return byId;
+ const code=normalizeFriendCode(raw);
+ if(code.length<4)return null;
+ for(const p of profiles.values())if(friendCodeFor(p.id)===code)return p;
+ return null;
+}
 function safeSkin(x){const s=String(x||"default");return POINT_SKINS.has(s)||Object.values(PREMIUM_PRODUCTS).includes(s)?s:"default"}
 function safeTable(x){const s=String(x||"table_classic");return POINT_TABLES.has(s)?s:"table_classic"}
 function safeDice(x){const s=String(x||"dice_ivory");return POINT_DICE.has(s)?s:"dice_ivory"}
@@ -135,7 +151,7 @@ function getProfile(id,name=null,seed=null){
  id=safeProfileId(id)||("guest-"+crypto.randomBytes(8).toString("hex"));
  let p=profiles.get(id);
  if(!p){
-   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),winStreak:0,bestWinStreak:0,owned:["default"],equipped:"default",avatar:safeAvatar(seed?.avatar),ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],rewardedAchievements:[],daily:null,recentMatchIds:[],updatedAt:Date.now()};
+   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),winStreak:0,bestWinStreak:0,owned:["default"],equipped:"default",avatar:safeAvatar(seed?.avatar),ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],rewardedAchievements:[],daily:null,recentMatchIds:[],friends:[],recentPlayers:[],updatedAt:Date.now()};
    if(Array.isArray(seed?.owned))p.owned=[...new Set(["default",...seed.owned.map(safeSkin)])];
    if(seed?.equipped&&p.owned.includes(safeSkin(seed.equipped)))p.equipped=safeSkin(seed.equipped);
    if(Array.isArray(seed?.ownedTables))p.ownedTables=[...new Set(["table_classic",...seed.ownedTables.map(safeTable)])];
@@ -145,7 +161,7 @@ function getProfile(id,name=null,seed=null){
    if(Array.isArray(seed?.achievements))p.achievements=[...new Set(seed.achievements.map(safeAchievement).filter(Boolean))];
    profiles.set(id,p);saveProfiles();
  }else{
-   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];p.winStreak=Math.max(0,Number(p.winStreak)||0);p.bestWinStreak=Math.max(p.winStreak,Number(p.bestWinStreak)||0);p.recentMatchIds=Array.isArray(p.recentMatchIds)?p.recentMatchIds:[];ensureDaily(p);p.updatedAt=Date.now();
+   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];p.winStreak=Math.max(0,Number(p.winStreak)||0);p.bestWinStreak=Math.max(p.winStreak,Number(p.bestWinStreak)||0);p.recentMatchIds=Array.isArray(p.recentMatchIds)?p.recentMatchIds:[];p.friends=Array.isArray(p.friends)?p.friends.map(safeProfileId).filter(Boolean):[];p.recentPlayers=Array.isArray(p.recentPlayers)?p.recentPlayers.filter(x=>x&&safeProfileId(x.id)).slice(0,20):[];ensureDaily(p);p.updatedAt=Date.now();
  }
  return p;
 }
@@ -174,7 +190,40 @@ function claimAchievementRewards(p){
  if(total>0)p.balance=(p.balance||0)+total;
  p.updatedAt=Date.now();return total;
 }
-function pubProfile(p){return {id:p.id,name:p.name,rating:p.rating||0,balance:p.balance||0,wins:p.wins||0,games:p.games||0,winStreak:Math.max(0,Number(p.winStreak)||0),bestWinStreak:Math.max(0,Number(p.bestWinStreak)||0),daily:dailyPublic(p),owned:p.owned||["default"],equipped:p.equipped||"default",avatar:safeAvatar(p.avatar),ownedTables:p.ownedTables||["table_classic"],equippedTable:safeTable(p.equippedTable),ownedDice:p.ownedDice||["dice_ivory"],equippedDice:safeDice(p.equippedDice),achievements:(p.achievements||[]).map(safeAchievement).filter(Boolean)}}
+function pubProfile(p){return {id:p.id,friendCode:friendCodeFor(p.id),name:p.name,rating:p.rating||0,balance:p.balance||0,wins:p.wins||0,games:p.games||0,winStreak:Math.max(0,Number(p.winStreak)||0),bestWinStreak:Math.max(0,Number(p.bestWinStreak)||0),daily:dailyPublic(p),owned:p.owned||["default"],equipped:p.equipped||"default",avatar:safeAvatar(p.avatar),ownedTables:p.ownedTables||["table_classic"],equippedTable:safeTable(p.equippedTable),ownedDice:p.ownedDice||["dice_ivory"],equippedDice:safeDice(p.equippedDice),achievements:(p.achievements||[]).map(safeAchievement).filter(Boolean),friendCount:Array.isArray(p.friends)?p.friends.length:0}}
+function miniProfile(id,fallback=null){
+ id=safeProfileId(id);const p=id?profiles.get(id):null;
+ const rid=id||safeProfileId(fallback?.id);return {id:rid,friendCode:friendCodeFor(rid),name:safeName(p?.name||fallback?.name||"Игрок"),avatar:safeAvatar(p?.avatar||fallback?.avatar),rating:Math.max(0,Number(p?.rating??fallback?.rating)||0),lastPlayed:Number(fallback?.lastPlayed)||0};
+}
+function socialPublic(p){
+ p.friends=Array.isArray(p.friends)?p.friends:[];
+ p.recentPlayers=Array.isArray(p.recentPlayers)?p.recentPlayers:[];
+ const friends=p.friends.map(id=>miniProfile(id)).filter(x=>x.id);
+ const recent=p.recentPlayers.map(x=>miniProfile(x.id,x)).filter(x=>x.id&&x.id!==p.id).slice(0,20);
+ return {friends,recent};
+}
+function recordRecentPlayers(room){
+ const real=room.players.filter(x=>!x.bot&&x.profileId);
+ const now=Date.now();
+ for(const rp of real){
+   const p=getProfile(rp.profileId,rp.name);
+   p.recentPlayers=Array.isArray(p.recentPlayers)?p.recentPlayers:[];
+   for(const other of real){
+     if(other.profileId===rp.profileId)continue;
+     const q=profiles.get(other.profileId);
+     const entry={id:other.profileId,name:other.name,avatar:safeAvatar(q?.avatar||other.avatar),rating:Number(q?.rating)||0,lastPlayed:now};
+     p.recentPlayers=[entry,...p.recentPlayers.filter(x=>safeProfileId(x?.id)!==other.profileId)].slice(0,20);
+   }
+   p.updatedAt=now;
+ }
+ saveProfiles();
+}
+function activeInvites(profileId){
+ const id=safeProfileId(profileId),now=Date.now();
+ const arr=(pendingInvites.get(id)||[]).filter(x=>Number(x.expiresAt)>now);
+ pendingInvites.set(id,arr);
+ return arr;
+}
 function leaderboard(limit=30){return [...profiles.values()].sort((a,b)=>(b.rating||0)-(a.rating||0)||(b.wins||0)-(a.wins||0)).slice(0,limit).map(pubProfile)}
 function verifySignedBlob(signature){
  const key=String(process.env.YANDEX_GAMES_SECRET||"");
@@ -209,6 +258,51 @@ async function handleApi(req,res,u){
  if(req.method==="GET"&&u.pathname==="/api/profile"){
    const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
    json(res,200,{profile:pubProfile(getProfile(id,null))});return true
+ }
+ if(req.method==="GET"&&u.pathname==="/api/find-player"){
+   const requester=safeProfileId(u.searchParams.get("id"));
+   const q=String(u.searchParams.get("q")||"").trim();
+   if(!q){json(res,400,{error:"Введите ID игрока или код дружбы."});return true}
+   const target=findProfileByIdOrFriendCode(q);
+   if(!target){json(res,404,{error:"Игрок не найден."});return true}
+   if(requester&&target.id===requester){json(res,200,{player:{...miniProfile(target.id),self:true}});return true}
+   json(res,200,{player:miniProfile(target.id)});return true
+ }
+ if(req.method==="GET"&&u.pathname==="/api/social"){
+   const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
+   const p=getProfile(id,null);json(res,200,{social:socialPublic(p)});return true
+ }
+ if(req.method==="GET"&&u.pathname==="/api/invites"){
+   const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
+   json(res,200,{invites:activeInvites(id)});return true
+ }
+ if(req.method==="POST"&&["/api/add-friend","/api/remove-friend","/api/send-invite","/api/dismiss-invite"].includes(u.pathname)){
+   let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
+   const id=safeProfileId(body.id);if(!id){json(res,400,{error:"profile id required"});return true}
+   const p=getProfile(id,body.name||null);
+   if(u.pathname==="/api/add-friend"||u.pathname==="/api/remove-friend"){
+     const targetId=safeProfileId(body.targetId);
+     if(!targetId||targetId===id||!profiles.has(targetId)){json(res,400,{error:"Игрок не найден."});return true}
+     p.friends=Array.isArray(p.friends)?p.friends:[];
+     if(u.pathname==="/api/add-friend"&&!p.friends.includes(targetId))p.friends.push(targetId);
+     if(u.pathname==="/api/remove-friend")p.friends=p.friends.filter(x=>x!==targetId);
+     saveProfiles();json(res,200,{ok:true,social:socialPublic(p),profile:pubProfile(p)});return true
+   }
+   if(u.pathname==="/api/send-invite"){
+     const targetId=safeProfileId(body.targetId),code=String(body.code||"").replace(/\D/g,"").slice(0,6);
+     if(!targetId||!p.friends?.includes(targetId)){json(res,400,{error:"Сначала добавьте игрока в друзья."});return true}
+     const room=rooms.get(code);
+     if(!room||room.started||room.gameOver){json(res,400,{error:"Комната уже недоступна для приглашения."});return true}
+     if(!room.players.some(x=>x.profileId===id)){json(res,403,{error:"Вы не находитесь в этой комнате."});return true}
+     const inv={inviteId:crypto.randomBytes(8).toString("hex"),fromId:id,fromName:p.name,fromAvatar:safeAvatar(p.avatar),code,createdAt:Date.now(),expiresAt:Date.now()+120000};
+     const arr=activeInvites(targetId).filter(x=>x.code!==code||x.fromId!==id);arr.unshift(inv);pendingInvites.set(targetId,arr.slice(0,10));
+     json(res,200,{ok:true,invite:inv});return true
+   }
+   if(u.pathname==="/api/dismiss-invite"){
+     const inviteId=String(body.inviteId||"").replace(/[^a-zA-Z0-9]/g,"").slice(0,40);
+     pendingInvites.set(id,activeInvites(id).filter(x=>x.inviteId!==inviteId));
+     json(res,200,{ok:true});return true
+   }
  }
  if(req.method==="GET"&&u.pathname==="/api/daily"){
    const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
@@ -335,7 +429,7 @@ function sendControl(ws,opcode,payload=Buffer.alloc(0)){if(!ws||ws.destroyed)ret
 function roomCode(){for(let i=0;i<50;i++){const c=String(crypto.randomInt(100000,1000000));if(!rooms.has(c))return c}throw new Error("code")}
 function token(){return crypto.randomBytes(18).toString("hex")}
 function roomColors(room){return COLOR_SETS[room.state?.players?.length||room.players.length]||COLOR_SETS[4]}
-function playerList(room){const cs=roomColors(room);return room.players.map(p=>({seat:p.seat,name:p.name,connected:p.bot?true:!!p.connected,bot:!!p.bot,host:!!p.host,color:cs[p.seat]||COLORS[p.seat],profileId:p.profileId||null,skinId:p.skinId||"default",avatar:safeAvatar(p.avatar||(p.profileId?profiles.get(p.profileId)?.avatar:null)),rating:p.profileId?(profiles.get(p.profileId)?.rating||0):0,eliminated:!!room.state?.players?.[p.seat]?.eliminated,misses:room.misses?.[p.seat]||0,reconnectUntil:p.bot?0:(Number(p.reconnectUntil)||0),connectionIssue:!p.bot&&!p.connected&&!!p.reconnectUntil})).sort((a,b)=>a.seat-b.seat)}
+function playerList(room){const cs=roomColors(room);return room.players.map(p=>({seat:p.seat,name:p.name,connected:p.bot?true:!!p.connected,bot:!!p.bot,host:!!p.host,color:cs[p.seat]||COLORS[p.seat],profileId:p.profileId||null,skinId:p.skinId||"default",avatar:safeAvatar(p.avatar||(p.profileId?profiles.get(p.profileId)?.avatar:null)),rating:p.profileId?(profiles.get(p.profileId)?.rating||0):0,botStyle:p.botStyle||null,eliminated:!!room.state?.players?.[p.seat]?.eliminated,misses:room.misses?.[p.seat]||0,reconnectUntil:p.bot?0:(Number(p.reconnectUntil)||0),connectionIssue:!p.bot&&!p.connected&&!!p.reconnectUntil})).sort((a,b)=>a.seat-b.seat)}
 function broadcast(room,obj){for(const p of room.players)if(p.connected&&p.ws)send(p.ws,obj)}
 function roomUpdate(room){broadcast(room,{type:"room_update",code:room.code,players:playerList(room),started:room.started,deadline:room.deadline||0,misses:room.misses||[],matchPoints:room.matchPoints||[],timerEnabled:room.timerEnabled!==false,chatHistory:room.chatHistory||[],autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat,connectionPausedSeat:Number.isInteger(room.connectionPausedSeat)?room.connectionPausedSeat:null})}
 function err(ws,message){send(ws,{type:"error",message})}
@@ -412,7 +506,7 @@ function playerFromMessage(m,seat,host,ws){
  const profileId=safeProfileId(m.profileId);const p=profileId?getProfile(profileId,m.name||"Игрок",{rating:m.rating||0}):null;
  return {seat,name:safeName(m.name),token:token(),host,connected:true,ws,profileId:profileId||null,skinId:safeSkin(m.skinId||(p?.equipped)||"default"),avatar:safeAvatar(m.avatar||(p?.avatar)||"animal:tiger")};
 }
-function botPlayer(i){return {seat:-1,name:`Компьютер ${i}`,token:`bot-${crypto.randomBytes(8).toString("hex")}`,host:false,connected:true,ws:null,profileId:null,skinId:"default",avatar:"animal:bear",bot:true}}
+function botPlayer(i){const styles=["cautious","aggressive","risky","adaptive"];return {seat:-1,name:`Компьютер ${i}`,token:`bot-${crypto.randomBytes(8).toString("hex")}`,host:false,connected:true,ws:null,profileId:null,skinId:"default",avatar:"animal:bear",bot:true,botStyle:styles[(Math.max(1,Number(i)||1)-1)%styles.length]}}
 function shufflePlayersForColors(room){
  for(let i=room.players.length-1;i>0;i--){const j=crypto.randomInt(0,i+1);[room.players[i],room.players[j]]=[room.players[j],room.players[i]]}
  room.players.forEach((p,i)=>p.seat=i);
@@ -426,7 +520,7 @@ function canControlSeat(room,p,seat){
 function stampPlayerNames(room,state){
  if(!state||!Array.isArray(state.players))return state;
  for(const rp of room.players)if(state.players[rp.seat]){
-   state.players[rp.seat].playerName=rp.name;state.players[rp.seat].profileId=rp.profileId||null;state.players[rp.seat].skinId=rp.skinId||"default";state.players[rp.seat].bot=!!rp.bot;
+   state.players[rp.seat].playerName=rp.name;state.players[rp.seat].profileId=rp.profileId||null;state.players[rp.seat].skinId=rp.skinId||"default";state.players[rp.seat].bot=!!rp.bot;state.players[rp.seat].botStyle=rp.botStyle||state.players[rp.seat].botStyle||null;
    if(room.state?.players?.[rp.seat]?.eliminated)state.players[rp.seat].eliminated=true;
  }
  return state;
@@ -528,6 +622,7 @@ function finishMatch(room,winnerSeat,reason){
      if(dailyReward>0)send(rp.ws,{type:"daily_update",reward:dailyReward,profile:pubProfile(p)});
    }
  }
+ recordRecentPlayers(room);
  room.version++;
  const winner=room.players.find(x=>x.seat===winnerSeat);
  room.status=reason||`Победил ${winner?.name||"игрок"} — ${roomColors(room)[winnerSeat]||""}.`;
@@ -591,6 +686,7 @@ function finishForcedLoss(room,loserSeat,reason,bonus=20){
    }
  }
 
+ recordRecentPlayers(room);
  room.version++;
  const rewardedNames=rewarded.map(seat=>room.players.find(x=>x.seat===seat)?.name).filter(Boolean);
  const bonusText=rewardedNames.length
@@ -857,4 +953,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V50: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V54: http://localhost:${PORT}`));
