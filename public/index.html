@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Партис V49 — чат, достижения и статистика</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Партис V51 — полный русский / саха интерфейс</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -12,7 +12,10 @@
       try {
         if (typeof YaGames === 'undefined') {
           // При локальном запуске /sdk.js недоступен — используем русский как fallback.
-          document.documentElement.lang = 'ru';
+          let savedLang = 'ru';
+          try { savedLang = localStorage.getItem('partis-language') || 'ru'; } catch {}
+          window.activeGameLanguage = (savedLang === 'sah') ? 'sah' : 'ru';
+          document.documentElement.lang = window.activeGameLanguage;
           return null;
         }
 
@@ -26,9 +29,13 @@
         window.gameLanguage = sdkLang;
         document.documentElement.lang = sdkLang;
 
-        // Сейчас у игры русская локализация. Если язык портала другой,
-        // используем русский как резервный набор текстов.
-        window.activeGameLanguage = (sdkLang === 'ru') ? 'ru' : 'ru';
+        // Пользователь может выбрать русский или саха тыла вручную.
+        let savedLang = null;
+        try { savedLang = localStorage.getItem('partis-language'); } catch {}
+        window.activeGameLanguage = (savedLang === 'sah' || savedLang === 'ru')
+          ? savedLang
+          : ((sdkLang === 'sah') ? 'sah' : 'ru');
+        document.documentElement.lang = window.activeGameLanguage;
 
         console.log('Yandex Games SDK initialized. Portal language:', sdkLang);
 
@@ -70,8 +77,12 @@
   <div id="seatBadgeBottom" class="seatBadge seatBadgeBottom" hidden></div>
   <div id="seatBadgeLeft" class="seatBadge seatBadgeLeft" hidden></div>
 
-  <div id="chatBubbleLayer" class="chatBubbleLayer" aria-live="polite"></div>
+  <div id="chatBubbleLayer" class="chatBubbleLayer" aria-live="polite" data-no-i18n="true"></div>
   <div id="gameEventLayer" class="gameEventLayer" aria-live="polite"></div>
+  <div id="connectionNotice" class="connectionNotice" hidden>
+    <strong>⚠️ Проблемы со связью</strong>
+    <span id="connectionNoticeText">Ждём восстановления соединения…</span>
+  </div>
 </section>
 <aside>
 <div class="card turnCard"><small>Сейчас ходит</small><div id="player" class="player">—</div><div id="youAre" class="youAre" hidden></div><div id="status">Начните игру</div></div>
@@ -131,9 +142,13 @@
           </div>
           <div class="profilePanel">
             <button id="profileAvatarButton" class="profileAvatar profileAvatarButton" type="button" title="Открыть профиль"><span>🐯</span></button>
-            <div class="profileInfo"><b id="profileName">Игрок</b><small>🏆 Рейтинг: <strong id="profileRating">0</strong> · 💰 Баланс: <strong id="profileBalance">0</strong></small><small>Победы: <strong id="profileWins">0</strong> · Игры: <strong id="profileGames">0</strong></small></div>
+            <div class="profileInfo"><b id="profileName">Игрок</b><small>🏆 Рейтинг: <strong id="profileRating">0</strong> · 💰 Баланс: <strong id="profileBalance">0</strong></small><small>Победы: <strong id="profileWins">0</strong> · Игры: <strong id="profileGames">0</strong> · 🔥 Серия: <strong id="profileStreak">0</strong></small></div>
             <div class="profilePanelActions"><button id="openProfile" type="button">Профиль</button><button id="profileLogin" type="button">Войти в Яндекс</button></div>
           </div>
+        </div>
+        <div id="resumeGameBanner" class="resumeGameBanner" hidden>
+          <div><b>🔄 Есть незавершённая онлайн-партия</b><span>Попробовать восстановить ваше место в комнате.</span></div>
+          <button id="resumeGameBtn" type="button">Вернуться в игру</button>
         </div>
         <div class="hubBody">
           <div class="mainMenuButtons">
@@ -144,9 +159,18 @@
             <button id="playLocal" type="button"><span class="menuNum">◉</span><span>Играть на одном устройстве</span></button>
           </div>
           <div class="hubSide">
+            <div class="hubLanguage" id="languageMenuCard">
+              <div class="hubLanguageTop"><b>🌐 Язык интерфейса</b><span id="currentLanguageName">Русский</span></div>
+              <select id="languageSelectMenu" class="languageSelectMenu" aria-label="Язык интерфейса">
+                <option value="ru">Русский</option>
+                <option value="sah">Саха тыла</option>
+              </select>
+              <small>Язык меняется только у вас на этом устройстве. Другие игроки могут выбрать свой язык независимо.</small>
+            </div>
             <button id="openRating" class="hubFeature" type="button"><b>🏆 Рейтинг игроков</b><span>За каждую фишку в Домике +20 очков</span></button>
             <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин</b><span>Фишки, столы, кубики и премиум-наборы</span></button>
             <button id="openTutorial" class="hubFeature" type="button"><b>🎓 Обучение</b><span>Коротко пройти правила перед первой партией</span></button>
+            <button id="openDaily" class="hubFeature dailyFeature" type="button"><b>📅 Ежедневные задания</b><span id="dailyMenuSummary">3 задания · награды на баланс</span></button>
             <div class="hubRules howToPlayShort"><b>Как играть — коротко</b><span>🎲 Ходите двумя костями по отдельности. 6 выводит фишку из Базы. Сделайте один полный круг и заведите все 5 фишек в Домик. Фишку соперника можно взять в плен. Куш даёт дополнительный бросок; 3 куша подряд дают бонусную фишку в Домик. В ловушке нужно пройти 1 → 3 → 6.</span></div>
             <div class="hubRules"><b>Онлайн-правило времени</b><span>Можно играть с таймером 25 секунд или без него. При таймере: 3 просрочки — поражение.</span></div>
           </div>
@@ -167,7 +191,7 @@
         <div class="modalTitleRow"><div><h2>👤 Профиль игрока</h2><p>Аватар, статистика, косметика и достижения.</p></div><button class="hubBack" type="button">← В меню</button></div>
         <div class="profileHero">
           <div id="profileModalAvatar" class="profileModalAvatar"><span>🐯</span></div>
-          <div><h3 id="profileModalName">Игрок</h3><p>Рейтинг <b id="profileModalRating">0</b> · Победы <b id="profileModalWins">0</b> · Игры <b id="profileModalGames">0</b></p><small id="profileCurrentCosmetics">Классический стол · стандартные кубики</small></div>
+          <div><h3 id="profileModalName">Игрок</h3><p>Рейтинг <b id="profileModalRating">0</b> · Победы <b id="profileModalWins">0</b> · Игры <b id="profileModalGames">0</b> · 🔥 Серия <b id="profileModalStreak">0</b></p><small id="profileBestStreak">Лучшая серия: 0</small><small id="profileCurrentCosmetics">Классический стол · стандартные кубики</small></div>
         </div>
         <h3>Выберите аватар</h3>
         <div id="avatarChoices" class="avatarChoices"></div>
@@ -198,6 +222,14 @@
         <h3>Премиум-фишки футбольных клубов</h3>
         
         <div id="premiumGrid" class="skinGrid premiumGrid"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="dailyModal">
+      <div class="dialog dailyDialog">
+        <div class="modalTitleRow"><div><h2>📅 Ежедневные задания</h2><p>Три задания обновляются каждый день по времени Якутска. Награда начисляется автоматически.</p></div><button class="hubBack" type="button">← В меню</button></div>
+        <div id="dailyReset" class="dailyReset">Обновление: ежедневно в 00:00 (Якутск)</div>
+        <div id="dailyQuestGrid" class="dailyQuestGrid"><div class="ratingLoading">Загрузка заданий…</div></div>
       </div>
     </div>
 

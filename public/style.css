@@ -937,3 +937,196 @@ body[data-dice-skin="dice_ruby"] .die{background:linear-gradient(145deg,#ff8791,
  .postStatsGrid{grid-template-columns:1fr}
  .victoryCup{font-size:44px}.victoryDialog h2{font-size:24px}
 }
+
+
+/* ==========================================================
+   PARTIS V50 — связь, ежедневные задания, локализация
+   ========================================================== */
+.languageSelect{
+  min-height:36px;
+  padding:0 9px;
+  border:1px solid #6c4327;
+  border-radius:9px;
+  background:#f6dfb9;
+  color:#3b2517;
+  font-weight:800;
+}
+.connectionNotice{
+  position:absolute;
+  z-index:60;
+  top:16px;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  max-width:min(78%,520px);
+  padding:9px 14px;
+  border:2px solid #b77818;
+  border-radius:14px;
+  background:rgba(255,240,190,.97);
+  color:#4a2f12;
+  box-shadow:0 6px 18px #0007;
+  text-align:center;
+  pointer-events:none;
+}
+.connectionNotice[hidden]{display:none!important}
+.connectionNotice.selfIssue{
+  border-color:#b53a32;
+  background:rgba(255,219,211,.97);
+}
+.connectionNotice strong{font-size:13px}
+.connectionNotice span{font-size:11px}
+.resumeGameBanner{
+  margin:0 0 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:10px 12px;
+  border:2px solid #4a8a63;
+  border-radius:12px;
+  background:#e3f5e9;
+  box-shadow:0 4px 10px #0002;
+}
+.resumeGameBanner[hidden]{display:none!important}
+.resumeGameBanner div{display:flex;flex-direction:column;gap:2px}
+.resumeGameBanner span{font-size:11px;color:#46604e}
+.resumeGameBanner button{white-space:nowrap}
+.dailyFeature{border-color:#a3772f!important}
+.dailyDialog{
+  width:min(760px,94vw)!important;
+  max-height:88vh;
+  overflow:auto;
+}
+.dailyReset{
+  margin:4px 0 12px;
+  padding:7px 9px;
+  border-radius:9px;
+  background:#f4e4c9;
+  color:#715237;
+  font-size:11px;
+}
+.dailyQuestGrid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+.dailyQuestCard{
+  padding:12px;
+  border:2px solid #8d6843;
+  border-radius:13px;
+  background:linear-gradient(#fff4df,#ead1a9);
+  box-shadow:0 3px 7px #0002;
+}
+.dailyQuestCard.done{
+  border-color:#3d8b58;
+  background:linear-gradient(#e7f8eb,#c8e9d1);
+}
+.dailyQuestTop{
+  min-height:40px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:8px;
+}
+.dailyQuestTop b{font-size:12px;line-height:1.2}
+.dailyQuestTop strong{font-size:11px;white-space:nowrap;color:#75430e}
+.dailyQuestProgress{
+  height:8px;
+  margin:9px 0 5px;
+  overflow:hidden;
+  border-radius:999px;
+  background:#b89a72;
+  box-shadow:inset 0 1px 3px #0004;
+}
+.dailyQuestProgress i{
+  display:block;
+  height:100%;
+  min-width:0;
+  border-radius:999px;
+  background:linear-gradient(90deg,#3fa35c,#74c967);
+}
+.dailyQuestCard small{font-size:10px;color:#65492f}
+
+/* Редкие события — чуть ярче обычных, но короткие. */
+.gameEvent-doublekill strong{font-size:clamp(28px,5vw,58px)!important;text-shadow:0 3px 0 #641412,0 0 22px #ff665e}
+.gameEvent-lastpiece strong{font-size:clamp(25px,4.5vw,52px)!important;text-shadow:0 3px 0 #6e4a0c,0 0 20px #ffd568}
+.gameEvent-comeback strong{font-size:clamp(30px,5.3vw,62px)!important;text-shadow:0 3px 0 #123c64,0 0 24px #5bc7ff}
+
+/* Послематчевое окно всегда помещается в экран. */
+.victoryDialog{
+  width:min(980px,95vw)!important;
+  max-height:92vh!important;
+  overflow:auto!important;
+}
+.postMatchStats{max-width:100%;overflow:visible}
+.postStatsGrid{
+  grid-template-columns:repeat(auto-fit,minmax(205px,1fr))!important;
+}
+.postStatCard{min-width:0}
+.postStatValues{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.postStatValues span{min-width:0}
+
+/* Видимая проблема связи у игрока в лобби. */
+.lobbyPlayer.offline{border-color:#ba6f35;background:#fff0df}
+.lobbyPlayer.offline .lobbyDot{animation:partisPulse 1.1s infinite}
+@keyframes partisPulse{50%{opacity:.35;transform:scale(.78)}}
+
+@media(max-width:700px){
+  .languageSelect{min-height:32px;font-size:11px;max-width:115px}
+  .connectionNotice{top:8px;max-width:88%;padding:6px 10px}
+  .connectionNotice strong{font-size:11px}.connectionNotice span{font-size:9px}
+  .resumeGameBanner{align-items:stretch;flex-direction:column}
+  .resumeGameBanner button{width:100%}
+  .dailyQuestGrid{grid-template-columns:1fr}
+  .dailyQuestCard{padding:9px}
+  .victoryDialog{width:96vw!important;max-height:90vh!important;padding:12px!important}
+  .postStatsGrid{grid-template-columns:1fr!important}
+}
+
+
+/* ==========================================================
+   V51 — выбор языка в главном меню
+   ========================================================== */
+.hubLanguage{
+  display:grid;
+  gap:7px;
+  padding:12px 13px;
+  border:1px solid rgba(111,72,40,.28);
+  border-radius:14px;
+  background:rgba(255,246,228,.78);
+  box-shadow:inset 0 1px 0 #fff8;
+}
+.hubLanguageTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.hubLanguageTop b{font-size:14px}
+.hubLanguageTop span{
+  font-size:11px;
+  font-weight:800;
+  opacity:.72;
+}
+.languageSelectMenu{
+  width:100%;
+  min-height:38px;
+  border:1px solid #9f744c;
+  border-radius:10px;
+  background:#fff8e9;
+  color:#3c2818;
+  font:700 13px Arial,sans-serif;
+  padding:7px 10px;
+}
+.hubLanguage small{
+  font-size:10px;
+  line-height:1.35;
+  opacity:.72;
+}
+@media(max-width:700px){
+  .hubLanguage{padding:10px}
+  .languageSelectMenu{font-size:16px}
+}

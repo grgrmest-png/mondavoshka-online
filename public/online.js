@@ -1,10 +1,12 @@
 "use strict";
 (()=>{
+ const uiText=s=>window.PartisI18n?.localize?.(s)??String(s??"");
+ const uiPlayerLabel=s=>window.PartisI18n?.localizePlayerLabel?.(s)??String(s??"");
  const colors=[
   {name:"Красный",fill:"#df2735"},{name:"Чёрный",fill:"#171717"},
   {name:"Синий",fill:"#008fa5"},{name:"Бело-синий",fill:"#f8f7ef"}
  ];
- const S={socket:null,active:false,connected:false,started:false,code:null,token:null,seat:null,host:false,players:[],name:"",actionSeat:null,pendingStart:false,reconnectTimer:null,manualClose:false,lastVersion:0,randomSearching:false,randomSize:2,matchMode:"room",deadline:0,misses:[],matchPoints:[],fillBots:false,autoSeat:null,autoControllerSeat:null,timerEnabled:true,chatHistory:[]};
+ const S={socket:null,active:false,connected:false,started:false,code:null,token:null,seat:null,host:false,players:[],name:"",actionSeat:null,pendingStart:false,reconnectTimer:null,manualClose:false,lastVersion:0,randomSearching:false,randomSize:2,matchMode:"room",deadline:0,misses:[],matchPoints:[],fillBots:false,autoSeat:null,autoControllerSeat:null,timerEnabled:true,chatHistory:[],connectionPausedSeat:null,resumeAttempt:false};
 
  function wsUrl(){
    const configured=String(window.MONDAVOSHKA_WS_URL||"").trim();
@@ -15,19 +17,40 @@
  }
  function cleanName(v){return String(v||"").replace(/[<>\u0000-\u001f]/g,"").trim().slice(0,24)||"Игрок"}
  function normalizeCode(v){return String(v||"").replace(/\D/g,"").slice(0,6)}
- function setErr(id,text){const e=document.querySelector(id);if(e)e.textContent=text||""}
+ function setErr(id,text){const e=document.querySelector(id);if(e)e.textContent=uiText(text||"")}
  function profilePayload(){
    const p=window.MondavoshkaProfile?.publicProfile?.()||{};
    return {profileId:p.id||null,skinId:p.skinId||"default",avatar:p.avatar||"animal:tiger",rating:Number(p.rating)||0};
  }
  function playerTextBySeat(seat){
-   const p=S.players.find(x=>x.seat===seat);const color=p?.color||g?.players?.[seat]?.name||colors[seat]?.name||"Игрок";
+   const p=S.players.find(x=>x.seat===seat);
+   const color=p?.color||g?.players?.[seat]?.name||colors[seat]?.name||"Игрок";
    return p?`${p.name} — ${color}`:color;
  }
  function setConnection(text,ok=null){
    const e=document.querySelector("#onlineConnection");if(!e)return;
-   e.textContent=text;e.classList.remove("ok","bad");if(ok===true)e.classList.add("ok");if(ok===false)e.classList.add("bad");
+   e.textContent=uiText(text);e.classList.remove("ok","bad");if(ok===true)e.classList.add("ok");if(ok===false)e.classList.add("bad");
  }
+ function renderConnectionNotice(){
+   const box=document.querySelector("#connectionNotice"),text=document.querySelector("#connectionNoticeText");
+   if(!box||!text)return;
+   if(S.active&&!S.connected){
+     box.hidden=false;box.classList.add("selfIssue");
+     text.textContent=uiText("Связь с сервером потеряна. Пытаемся восстановить соединение…");
+     return;
+   }
+   box.classList.remove("selfIssue");
+   const now=Date.now();
+   const problem=S.players.find(p=>!p.bot&&!p.connected&&Number(p.reconnectUntil)>now);
+   if(problem){
+     const left=Math.max(0,Math.ceil((Number(problem.reconnectUntil)-now)/1000));
+     box.hidden=false;
+     text.textContent=uiText(`У ${problem.name||"игрока"} проблемы со связью. Ждём возвращения: ${left} сек.`);
+   }else{
+     box.hidden=true;
+   }
+ }
+
  function send(obj){
    if(!S.socket||S.socket.readyState!==WebSocket.OPEN)return false;
    S.socket.send(JSON.stringify(obj));return true;
@@ -82,7 +105,7 @@
    if(!items.length){
      const empty=document.createElement("div");
      empty.className="chatHistoryEmpty";
-     empty.textContent="Пока сообщений нет";
+     empty.textContent=uiText("Пока сообщений нет");
      box.appendChild(empty);
      return;
    }
@@ -91,7 +114,7 @@
      row.className="chatHistoryRow";
      row.style.setProperty("--chat-accent",chatAccent(Number(m.seat)));
      const who=document.createElement("b");
-     who.textContent=String(m.name||"Игрок").slice(0,24);
+     who.textContent=String(m.name||"Игрок")==="Игрок"?uiText("Игрок"):String(m.name||"Игрок").slice(0,24);
      const msg=document.createElement("span");
      msg.textContent=cleanChatText(m.text);
      row.append(who,msg);
@@ -127,7 +150,7 @@
    bubble.style.setProperty("--chat-accent",chatAccent(seat));
 
    const who=document.createElement("b");
-   who.textContent=String(m.name||"Игрок").slice(0,24);
+   who.textContent=String(m.name||"Игрок")==="Игрок"?uiText("Игрок"):String(m.name||"Игрок").slice(0,24);
 
    const msg=document.createElement("span");
    msg.textContent=cleanChatText(m.text);
@@ -166,11 +189,11 @@
      let done=false;
      try{S.socket=new WebSocket(wsUrl())}catch(e){reject(e);return}
      const timer=setTimeout(()=>{if(!done){done=true;try{S.socket.close()}catch{};reject(new Error("Сервер не отвечает"))}},7000);
-     S.socket.onopen=()=>{clearTimeout(timer);done=true;S.connected=true;setConnection("Связь с сервером установлена",true);resolve()};
+     S.socket.onopen=()=>{clearTimeout(timer);done=true;S.connected=true;setConnection("Связь с сервером установлена",true);renderConnectionNotice();resolve()};
      S.socket.onmessage=e=>{try{handle(JSON.parse(e.data))}catch(err){console.error("Online message error",err)}};
      S.socket.onerror=()=>{if(!done){clearTimeout(timer);done=true;reject(new Error("Не удалось подключиться к онлайн-серверу"))}};
      S.socket.onclose=()=>{
-       S.connected=false;setConnection("Связь с сервером потеряна",false);
+       S.connected=false;setConnection("Связь с сервером потеряна",false);renderConnectionNotice();
        if(!S.manualClose&&S.active&&S.code&&S.token){clearTimeout(S.reconnectTimer);S.reconnectTimer=setTimeout(reconnect,1800)}
        else if(S.randomSearching){setRandomStatus("Связь потеряна. Нажмите «Искать снова».",false);setRandomForm(false)}
      };
@@ -179,8 +202,21 @@
  async function reconnect(){
    try{await connect();send({type:"reconnect_room",code:S.code,token:S.token,name:S.name,...profilePayload()})}catch(e){S.reconnectTimer=setTimeout(reconnect,2500)}
  }
- function saveSession(){try{localStorage.setItem("mondavoshka-online",JSON.stringify({code:S.code,token:S.token,name:S.name}))}catch{}}
- function clearSession(){try{localStorage.removeItem("mondavoshka-online")}catch{}}
+ function saveSession(){try{const raw=JSON.stringify({code:S.code,token:S.token,name:S.name,ts:Date.now()});localStorage.setItem("partis-online",raw);localStorage.setItem("mondavoshka-online",raw)}catch{}}
+ function loadSession(){try{return JSON.parse(localStorage.getItem("partis-online")||localStorage.getItem("mondavoshka-online")||"null")}catch{return null}}
+ function clearSession(){try{localStorage.removeItem("partis-online");localStorage.removeItem("mondavoshka-online")}catch{}}
+ function refreshResumeBanner(){
+   const b=document.querySelector("#resumeGameBanner");if(!b)return;
+   const s=loadSession();
+   b.hidden=!(s?.code&&s?.token&&!S.active);
+ }
+ async function resumeSavedGame(){
+   const saved=loadSession();if(!saved?.code||!saved?.token)return;
+   S.code=String(saved.code);S.token=String(saved.token);S.name=cleanName(saved.name||window.MondavoshkaProfile?.name||"Игрок");S.active=true;S.matchMode="room";S.resumeAttempt=true;
+   refreshResumeBanner();
+   try{await connect();send({type:"reconnect_room",code:S.code,token:S.token,name:S.name,...profilePayload()})}
+   catch(e){S.active=false;S.resumeAttempt=false;refreshResumeBanner();setConnection("Не удалось восстановить игру",false)}
+ }
 
  function showLobby(){
    closeGameMenus();
@@ -188,7 +224,8 @@
    renderLobby();
  }
  function renderLobby(){
-   const title=document.querySelector("#lobbyHeading");if(title)title.textContent=S.matchMode==="random"?"Случайная онлайн-партия":"Онлайн-комната";
+   const title=document.querySelector("#lobbyHeading");
+   if(title)title.textContent=uiText(S.matchMode==="random"?"Случайная онлайн-партия":"Онлайн-комната");
    const codeBox=document.querySelector("#roomCodeBox");if(codeBox)codeBox.style.display=S.matchMode==="random"?"none":"grid";
    const code=document.querySelector("#lobbyCode");if(code)code.textContent=S.code||"------";
    const box=document.querySelector("#lobbyPlayers");if(box){
@@ -196,9 +233,17 @@
      S.players.slice().sort((a,b)=>a.seat-b.seat).forEach(p=>{
        const d=document.createElement("div");d.className="lobbyPlayer"+(p.connected?"":" offline");
        const dot=document.createElement("span");dot.className="lobbyDot";dot.style.background=colors[p.seat]?.fill||"#999";
-       const text=document.createElement("span");text.textContent=`${p.name} — ${p.color||colors[p.seat]?.name||"Игрок"}${p.bot?" • компьютер":""}${p.host?" • создатель":""}${p.connected?"":" • не в сети"}`;
+       const text=document.createElement("span");
+       const reconnecting=!p.connected&&Number(p.reconnectUntil)>Date.now();
+       const pname=p.name==="Игрок"?uiText("Игрок"):p.name;
+       const color=uiText(p.color||colors[p.seat]?.name||"Игрок");
+       let suffix="";
+       if(p.bot)suffix+=` • ${uiText("компьютер")}`;
+       if(p.host)suffix+=` • ${uiText("создатель")}`;
+       if(!p.connected)suffix+=` • ${uiText(reconnecting?"проблемы со связью":"не в сети")}`;
+       text.textContent=`${pname} — ${color}${suffix}`;
        d.append(dot,text);
-       if(p.seat===S.seat){const you=document.createElement("span");you.className="you";you.textContent="это вы";d.appendChild(you)}
+       if(p.seat===S.seat){const you=document.createElement("span");you.className="you";you.textContent=uiText("это вы");d.appendChild(you)}
        box.appendChild(d);
      });
    }
@@ -209,24 +254,23 @@
    if(fillWrap)fillWrap.hidden=!(S.host&&!S.started&&(connectedCount===2||connectedCount===3));
    if(fill&&connectedCount>=4){fill.checked=false;S.fillBots=false}
    const timerMode=document.querySelector("#lobbyTimerMode");
-   if(timerMode)timerMode.textContent=S.timerEnabled?"⏱ Режим: 25 секунд на ход · 3 просрочки = поражение":"∞ Режим: без таймера";
+   if(timerMode)timerMode.textContent=uiText(S.timerEnabled?"⏱ Режим: 25 секунд на ход · 3 просрочки = поражение":"∞ Режим: без таймера");
    const hint=document.querySelector("#lobbyHint");
    if(hint){
-     if(S.started)hint.textContent="Партия уже началась.";
-     else if(S.matchMode==="random"&&S.host)hint.textContent=`Соперники найдены (${connectedCount}). Можно начинать партию.`;
-     else if(S.matchMode==="random")hint.textContent=`Соперники найдены. Ждём, пока ${S.players.find(p=>p.host)?.name||"создатель"} запустит игру.`;
-     else if(S.host)hint.textContent=connectedCount<2?"Для начала игры нужен ещё минимум 1 игрок.":`Подключено ${connectedCount}. Можно начинать игру.`;
-     else hint.textContent="Ждём, пока создатель комнаты начнёт игру.";
+     if(S.started)hint.textContent=uiText("Партия уже началась.");
+     else if(S.matchMode==="random"&&S.host)hint.textContent=uiText(`Соперники найдены (${connectedCount}). Можно начинать партию.`);
+     else if(S.matchMode==="random")hint.textContent=uiText(`Соперники найдены. Ждём, пока ${S.players.find(p=>p.host)?.name||"создатель"} запустит игру.`);
+     else if(S.host)hint.textContent=connectedCount<2?uiText("Для начала игры нужен ещё минимум 1 игрок."):uiText(`Подключено ${connectedCount}. Можно начинать игру.`);
+     else hint.textContent=uiText("Ждём, пока создатель комнаты начнёт игру.");
    }
    setConnection(S.connected?"Связь с сервером установлена":"Нет связи с сервером",S.connected);
- }
- function controlsSeat(seat){
+ } function controlsSeat(seat){
    if(S.seat===seat)return true;
    if(S.autoSeat===seat && S.autoControllerSeat===S.seat)return true;
    return !!(S.host&&g?.botSeats?.includes(seat));
  }
  function canAct(){
-   return !!(S.active&&S.started&&g&&controlsSeat(g.turn)&&S.connected&&!g.gameOver&&!g.players?.[g.turn]?.eliminated);
+   return !!(S.active&&S.started&&g&&!Number.isInteger(S.connectionPausedSeat)&&controlsSeat(g.turn)&&S.connected&&!g.gameOver&&!g.players?.[g.turn]?.eliminated);
  }
  function isBotController(){
    if(S.autoSeat===g?.turn && S.autoControllerSeat===S.seat)return true;
@@ -248,27 +292,33 @@
    if(card)card.hidden=!(S.active&&S.started);
    if(score)score.hidden=!(S.active&&S.started);
    const timer=document.querySelector("#turnTimer"),unit=document.querySelector("#turnTimerUnit"),bar=document.querySelector("#turnTimerBar"),miss=document.querySelector("#missCounter");
-   if(!S.timerEnabled){
-     if(timer)timer.textContent="∞";
-     if(unit)unit.textContent="без лимита";
+   if(Number.isInteger(S.connectionPausedSeat)){
+     if(timer)timer.textContent="⏸";
+     if(unit)unit.textContent=uiText("связь");
      if(bar)bar.style.width="100%";
-     if(miss)miss.textContent="Таймер отключён — просрочки не считаются";
+     if(miss)miss.textContent=uiText(`Ожидаем возвращения ${playerTextBySeat(S.connectionPausedSeat)}`);
+   }else if(!S.timerEnabled){
+     if(timer)timer.textContent="∞";
+     if(unit)unit.textContent=uiText("без лимита");
+     if(bar)bar.style.width="100%";
+     if(miss)miss.textContent=uiText("Таймер отключён — просрочки не считаются");
    }else{
      const left=Math.max(0,S.deadline-Date.now()),sec=Math.max(0,Math.ceil(left/1000));
      if(timer)timer.textContent=String(sec);
-     if(unit)unit.textContent="сек";
+     if(unit)unit.textContent=uiText("сек");
      if(bar)bar.style.width=`${Math.max(0,Math.min(100,left/25000*100))}%`;
      if(miss){
        const parts=S.players.filter(p=>!p.bot).slice().sort((a,b)=>a.seat-b.seat).map(p=>`${p.name}: ${S.misses[p.seat]||0}/3`);
-       miss.textContent=parts.length?`Просрочки — ${parts.join(" · ")}`:"Просрочки: 0 / 3";
+       miss.textContent=uiText(parts.length?`Просрочки — ${parts.join(" · ")}`:"Просрочки: 0 / 3");
      }
    }
    const mp=document.querySelector("#matchPoints");if(mp)mp.textContent=String(S.matchPoints[S.seat]||0);
  }
- setInterval(renderTurnTimer,250);
+ setInterval(()=>{renderTurnTimer();renderConnectionNotice()},250);
  function applyTimer(m){
    if(Object.prototype.hasOwnProperty.call(m,"deadline"))S.deadline=Number(m.deadline)||0;
    if(Object.prototype.hasOwnProperty.call(m,"timerEnabled"))S.timerEnabled=m.timerEnabled!==false;
+   if(Object.prototype.hasOwnProperty.call(m,"connectionPausedSeat"))S.connectionPausedSeat=Number.isInteger(m.connectionPausedSeat)?m.connectionPausedSeat:null;
    if(Array.isArray(m.misses))S.misses=m.misses;
    if(Array.isArray(m.matchPoints))S.matchPoints=m.matchPoints;
    renderTurnTimer();
@@ -288,7 +338,10 @@
  function syncState(){
    if(!S.active||!S.started||!S.connected||!g)return;
    if(S.actionSeat!=null&&!controlsSeat(S.actionSeat))return;
-   send({type:"state_update",code:S.code,state:JSON.parse(JSON.stringify(g)),status:document.querySelector("#status")?.textContent||""});
+   {
+   const statusEl=document.querySelector("#status");
+   send({type:"state_update",code:S.code,state:JSON.parse(JSON.stringify(g)),status:statusEl?.dataset?.source||statusEl?.textContent||""});
+ }
  }
  function afterNetworkRollApplied(){refreshControls();if(S.actionSeat!=null&&controlsSeat(S.actionSeat))setTimeout(syncState,30)}
  function requestRoll(){
@@ -312,7 +365,7 @@
    catch(e){setErr("#joinOnlineError",`${e.message}. Проверьте адрес онлайн-сервера.`)}
  }
  function setRandomStatus(text,searching=null){
-   const el=document.querySelector("#randomStatus");if(el)el.textContent=text||"";
+   const el=document.querySelector("#randomStatus");if(el)el.textContent=uiText(text||"");
    if(searching!==null){const spin=document.querySelector("#randomSpinner");if(spin)spin.style.display=searching?"inline-block":"none"}
  }
  function setRandomForm(searching){
@@ -341,8 +394,8 @@
    if(S.connected&&S.code)send({type:"leave_room",code:S.code,forfeit:false});
    S.manualClose=true;try{S.socket?.close()}catch{}
    clearTimeout(S.reconnectTimer);
-   S.socket=null;S.active=false;S.connected=false;S.started=false;S.code=null;S.token=null;S.seat=null;S.host=false;S.players=[];S.actionSeat=null;S.pendingStart=false;S.lastVersion=0;S.randomSearching=false;S.matchMode="room";S.deadline=0;S.misses=[];S.matchPoints=[];S.timerEnabled=true;S.chatHistory=[];
-   clearSession();gameMode="local";setChatVisible(false);
+   S.socket=null;S.active=false;S.connected=false;S.started=false;S.code=null;S.token=null;S.seat=null;S.host=false;S.players=[];S.actionSeat=null;S.pendingStart=false;S.lastVersion=0;S.randomSearching=false;S.matchMode="room";S.deadline=0;S.misses=[];S.matchPoints=[];S.timerEnabled=true;S.chatHistory=[];S.connectionPausedSeat=null;S.resumeAttempt=false;
+   clearSession();refreshResumeBanner();renderConnectionNotice();gameMode="local";setChatVisible(false);
    if(showMenu){closeGameMenus();document.querySelector("#mainMenu")?.classList.add("show")}
  }
  function forfeitAndLeave(){
@@ -364,10 +417,10 @@
  }
  function acceptRoomMessage(m,mode){
    S.active=true;S.connected=true;S.randomSearching=false;S.matchMode=mode||S.matchMode;setRandomForm(false);
-   S.code=m.code;S.token=m.token;S.seat=m.seat;S.host=!!m.host;S.players=m.players||[];S.started=!!m.started;S.lastVersion=m.version||0;S.deadline=m.deadline||0;S.misses=m.misses||[];S.matchPoints=m.matchPoints||[];
+   S.code=m.code;S.token=m.token;S.seat=m.seat;S.host=!!m.host;S.players=m.players||[];S.started=!!m.started;S.lastVersion=m.version||0;S.deadline=m.deadline||0;S.misses=m.misses||[];S.matchPoints=m.matchPoints||[];S.connectionPausedSeat=Number.isInteger(m.connectionPausedSeat)?m.connectionPausedSeat:null;S.resumeAttempt=false;
    if(Object.prototype.hasOwnProperty.call(m,"timerEnabled"))S.timerEnabled=m.timerEnabled!==false;
    if(Array.isArray(m.chatHistory))setChatHistory(m.chatHistory);
-   saveSession();showLobby();
+   saveSession();refreshResumeBanner();showLobby();renderConnectionNotice();
    if(m.started&&m.state){
      S.started=true;setChatVisible(true);
      startOnlineGameState(m.state,m.status||"Вы вернулись в онлайн-партию.");refreshControls()
@@ -377,6 +430,7 @@
    if(!m||typeof m.type!=="string")return;
    if(m.type==="error"){
      const text=m.message||"Ошибка онлайн-игры";
+     if(S.resumeAttempt&&(text.includes("больше не существует")||text.includes("восстановить"))){S.active=false;S.resumeAttempt=false;clearSession();refreshResumeBanner()}
      if(document.querySelector("#onlineCreateModal")?.classList.contains("show"))setErr("#createOnlineError",text);
      else if(document.querySelector("#onlineJoinModal")?.classList.contains("show"))setErr("#joinOnlineError",text);
      else if(document.querySelector("#randomOnlineModal")?.classList.contains("show")){setErr("#randomOnlineError",text);setRandomForm(false);setRandomStatus("",false)}
@@ -394,9 +448,10 @@
    if(m.type==="seat_update"){S.seat=m.seat;S.host=!!m.host;S.players=m.players||S.players;renderLobby();return}
    if(m.type==="room_update"){
      S.players=m.players||S.players;S.host=!!S.players.find(p=>p.seat===S.seat)?.host;S.started=!!m.started;
+     if(Object.prototype.hasOwnProperty.call(m,"connectionPausedSeat"))S.connectionPausedSeat=Number.isInteger(m.connectionPausedSeat)?m.connectionPausedSeat:null;
      if(Array.isArray(m.chatHistory))setChatHistory(m.chatHistory);
      if(S.started)setChatVisible(true);
-     applyTimer(m);applyAutoControl(m);renderLobby();return
+     applyTimer(m);applyAutoControl(m);renderLobby();renderConnectionNotice();return
    }
    if(m.type==="chat_message"){
      setChatVisible(true);
@@ -468,8 +523,23 @@
      }
      return;
    }
+   if(m.type==="player_connection"){
+     if(Array.isArray(m.players))S.players=m.players;
+     if(Object.prototype.hasOwnProperty.call(m,"connectionPausedSeat"))S.connectionPausedSeat=Number.isInteger(m.connectionPausedSeat)?m.connectionPausedSeat:null;
+     if(Object.prototype.hasOwnProperty.call(m,"deadline"))S.deadline=Number(m.deadline)||0;
+     renderLobby();renderConnectionNotice();renderTurnTimer();
+     if(S.started){
+       if(m.connected)setStatus(`${m.name||"Игрок"} вернулся в игру. Продолжаем партию.`);
+       else setStatus(`У ${m.name||"игрока"} проблемы со связью. Ждём переподключения до 90 секунд.`);
+     }
+     return;
+   }
+   if(m.type==="daily_update"){
+     if(m.profile)window.MondavoshkaProfile?.dailyAwardFromServer?.(m.profile,m.reward||0);
+     return;
+   }
    if(m.type==="player_left"){
-     S.players=m.players||S.players;renderLobby();if(S.started)setStatus(`${m.name||"Игрок"} отключился. Ожидаем возвращения.`);return;
+     S.players=m.players||S.players;renderLobby();renderConnectionNotice();if(S.started)setStatus(`${m.name||"Игрок"} отключился. Ожидаем возвращения.`);return;
    }
  }
 
@@ -478,7 +548,7 @@
  if(sendChatBtn)sendChatBtn.onclick=()=>{
    if(!sendChat(chatInput?.value||"")){
      const hint=document.querySelector("#chatHint");
-     if(hint){hint.textContent="Нет связи с комнатой";setTimeout(()=>hint.textContent="Enter — отправить · максимум 80 знаков",1400)}
+     if(hint){hint.textContent=uiText("Нет связи с комнатой");setTimeout(()=>hint.textContent=uiText("Enter — отправить · максимум 80 знаков"),1400)}
    }
  };
  if(chatInput)chatInput.addEventListener("keydown",e=>{
@@ -511,14 +581,26 @@
    startGame(null);
  };
  document.querySelector("#leaveOnlineRoom").onclick=()=>leave(true);
- document.querySelector("#copyRoomCode").onclick=async()=>{try{await navigator.clipboard.writeText(S.code||"");document.querySelector("#copyRoomCode").textContent="Скопировано";setTimeout(()=>document.querySelector("#copyRoomCode").textContent="Копировать код",1200)}catch{}};
+ document.querySelector("#copyRoomCode").onclick=async()=>{try{await navigator.clipboard.writeText(S.code||"");document.querySelector("#copyRoomCode").textContent=uiText("Скопировано");setTimeout(()=>document.querySelector("#copyRoomCode").textContent=uiText("Копировать код"),1200)}catch{}};
 
+ document.querySelector("#resumeGameBtn")?.addEventListener("click",resumeSavedGame);
+ refreshResumeBanner();
  const oldShowMain=showMainMenu;
  document.querySelectorAll(".backToMenu").forEach(b=>b.onclick=()=>{if(S.randomSearching&&!S.active)cancelRandom(true);else if(S.active)leave(true);else oldShowMain()});
  document.querySelector("#newGame").onclick=()=>{if(S.randomSearching&&!S.active)cancelRandom(true);else if(S.active)leave(true);else oldShowMain()};
 
+ function renderLocalized(){
+   renderLobby();
+   renderTurnTimer();
+   renderConnectionNotice();
+   renderChatHistory();
+   refreshControls();
+   const input=document.querySelector("#chatInput");
+   if(input)input.placeholder=window.PartisI18n?.language==="sah"?"Утары оонньооччуларга суруй…":"Написать соперникам…";
+ }
+ window.addEventListener("partis-language-changed",()=>{try{renderLocalized()}catch(e){}});
  window.MondavoshkaOnline={
    get active(){return S.active},get connected(){return S.connected},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get misses(){return S.misses},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
-   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,sendChat,wsUrl,playerTextBySeat
+   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,sendChat,resumeSavedGame,wsUrl,playerTextBySeat,renderLocalized
  };
 })();

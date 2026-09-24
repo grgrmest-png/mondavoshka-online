@@ -1,6 +1,8 @@
 
 "use strict";
 const NS="http://www.w3.org/2000/svg",svg=document.querySelector("#board"),$=s=>document.querySelector(s);
+const uiText=s=>window.PartisI18n?.localize?.(s)??String(s??"");
+const uiPlayerLabel=s=>window.PartisI18n?.localizePlayerLabel?.(s)??String(s??"");
 const C=[{id:"red",name:"Красный",fill:"#df2735"},{id:"black",name:"Чёрный",fill:"#171717"},{id:"blue",name:"Синий",fill:"#008fa5"},{id:"whiteblue",name:"Бело-синий",fill:"#f8f7ef"}];
 const TRACK=[], A=160,Z=840,STEP=(Z-A)/12;
 // 48 outer cells: on each side from center to corner exactly 6 cells.
@@ -87,12 +89,43 @@ function currentTableTheme(){
 function ensureMatchStats(){
  if(!g)return[];
  if(!Array.isArray(g.matchStats))g.matchStats=[];
- while(g.matchStats.length<g.players.length)g.matchStats.push({moves:0,captures:0,traps:0,trapExits:0,kush:0,tripleKush:0,home:0});
- g.matchStats=g.matchStats.map(x=>({moves:Number(x?.moves)||0,captures:Number(x?.captures)||0,traps:Number(x?.traps)||0,trapExits:Number(x?.trapExits)||0,kush:Number(x?.kush)||0,tripleKush:Number(x?.tripleKush)||0,home:Number(x?.home)||0}));
+ while(g.matchStats.length<g.players.length)g.matchStats.push({moves:0,captures:0,traps:0,trapExits:0,kush:0,tripleKush:0,home:0,maxDeficit:0});
+ g.matchStats=g.matchStats.map(x=>({moves:Number(x?.moves)||0,captures:Number(x?.captures)||0,traps:Number(x?.traps)||0,trapExits:Number(x?.trapExits)||0,kush:Number(x?.kush)||0,tripleKush:Number(x?.tripleKush)||0,home:Number(x?.home)||0,maxDeficit:Number(x?.maxDeficit)||0}));
  return g.matchStats;
 }
 function matchStat(seat){ensureMatchStats();return g?.matchStats?.[seat]||null}
-function bumpStat(seat,key,n=1){const s=matchStat(seat);if(!s)return;s[key]=(Number(s[key])||0)+n;checkLocalAchievements()}
+function updateHomeDeficits(){
+ if(!g?.players?.length)return;
+ ensureMatchStats();
+ const counts=g.players.map(pl=>pl.pieces.filter(p=>p.state==="home").length);
+ const leader=Math.max(0,...counts);
+ counts.forEach((c,i)=>{g.matchStats[i].maxDeficit=Math.max(Number(g.matchStats[i].maxDeficit)||0,leader-c)});
+}
+function maybeLastPieceEvent(seat){
+ if(!g?.players?.[seat])return;
+ const count=g.players[seat].pieces.filter(p=>p.state==="home").length;
+ g.lastPieceShown=Array.isArray(g.lastPieceShown)?g.lastPieceShown:Array(g.players.length).fill(false);
+ if(count===4&&!g.lastPieceShown[seat]){
+   g.lastPieceShown[seat]=true;
+   showGameEvent(window.partisT?.("event.lastPiece","ПОСЛЕДНЯЯ ФИШКА!")||"ПОСЛЕДНЯЯ ФИШКА!","lastpiece",`${g.players[seat].playerName||g.players[seat].name}: до победы осталась одна фишка`);
+   if(seat===localProfileSeat())window.MondavoshkaProfile?.unlockAchievement?.("last_piece");
+ }
+}
+function bumpStat(seat,key,n=1){
+ const s=matchStat(seat);if(!s)return;
+ s[key]=(Number(s[key])||0)+n;
+ if(key==="home"){updateHomeDeficits();maybeLastPieceEvent(seat)}
+ const mine=localProfileSeat();
+ if(seat===mine){
+   const report=window.MondavoshkaProfile?.reportDaily;
+   if(report){
+     const map={captures:"capture",kush:"kush",trapExits:"trap_escape",home:"home"};
+     if(map[key])report(map[key],n);
+     else if(key==="moves"&&s.moves%5===0)report("move",5);
+   }
+ }
+ checkLocalAchievements();
+}
 function localProfileSeat(){
  if(!g)return null;
  if(gameMode==="online"&&window.MondavoshkaOnline?.active)return Number.isInteger(window.MondavoshkaOnline.seat)?window.MondavoshkaOnline.seat:null;
@@ -123,41 +156,43 @@ function checkLocalAchievements(winnerSeat=null){
    if((s.traps||0)===0)unlock("clean_win");
    if((s.captures||0)>=3)unlock("aggressive_win");
    if((s.captures||0)===0)unlock("calm_win");
+   if((s.maxDeficit||0)>=2)unlock("comeback_win");
  }
 }
 function showGameEvent(text,kind="generic",sub=""){
  const layer=$("#gameEventLayer");if(!layer)return;
  const el=document.createElement("div");el.className=`gameEvent gameEvent-${kind}`;
- const strong=document.createElement("strong");strong.textContent=text;el.appendChild(strong);
- if(sub){const small=document.createElement("small");small.textContent=sub;el.appendChild(small)}
+ const strong=document.createElement("strong");strong.textContent=uiText(text);el.appendChild(strong);
+ if(sub){const small=document.createElement("small");small.textContent=uiText(sub);el.appendChild(small)}
  layer.appendChild(el);
  requestAnimationFrame(()=>el.classList.add("show"));
  setTimeout(()=>{el.classList.remove("show");setTimeout(()=>el.remove(),300)},1150);
 }
 function matchTitle(s){
- if((s?.tripleKush||0)>0)return "Повелитель кушей";
- if((s?.captures||0)>=3)return "Охотник";
- if((s?.kush||0)>=4)return "Король кушей";
- if((s?.traps||0)>=3)return "Искатель приключений";
- if((s?.home||0)>=4)return "Домосед";
- if((s?.captures||0)>=1)return "Тюремщик";
- if((s?.trapExits||0)>=1)return "Выживший";
- return "Стойкий игрок";
+ if((s?.maxDeficit||0)>=2)return uiText("Король камбэка");
+ if((s?.tripleKush||0)>0)return uiText("Повелитель кушей");
+ if((s?.captures||0)>=3)return uiText("Охотник");
+ if((s?.kush||0)>=4)return uiText("Король кушей");
+ if((s?.traps||0)>=3)return uiText("Искатель приключений");
+ if((s?.home||0)>=4)return uiText("Домосед");
+ if((s?.captures||0)>=1)return uiText("Тюремщик");
+ if((s?.trapExits||0)>=1)return uiText("Выживший");
+ return uiText("Стойкий игрок");
 }
 function renderPostMatchStats(winnerSeat=null){
  const box=$("#postMatchStats");if(!box||!g)return;
  ensureMatchStats();box.replaceChildren();
- const title=document.createElement("h3");title.textContent="Статистика и титулы партии";box.appendChild(title);
+ const title=document.createElement("h3");title.textContent=uiText("Статистика и титулы партии");box.appendChild(title);
  const grid=document.createElement("div");grid.className="postStatsGrid";
  g.players.forEach((pl,seat)=>{
    const s=g.matchStats[seat]||{};const card=document.createElement("div");card.className="postStatCard"+(seat===winnerSeat?" winner":"");
    const top=document.createElement("div");top.className="postStatTop";
    const av=document.createElement("div");av.className=`postStatAvatar seatRing-${pl.id}`;
    const onlineP=window.MondavoshkaOnline?.players?.find?.(x=>x.seat===seat);window.MondavoshkaProfile?.paintAvatar?.(av,onlineP?.avatar||pl.avatar||(pl.bot?"animal:bear":"animal:tiger"),pl.bot?"🤖":"🐯");
-   const nm=document.createElement("div");const b=document.createElement("b");b.textContent=(seat===winnerSeat?"🏆 ":"")+(pl.playerName||pl.name);const sm=document.createElement("small");sm.textContent=pl.name;nm.append(b,sm);top.append(av,nm);card.appendChild(top);
+   const nm=document.createElement("div");const b=document.createElement("b");b.textContent=(seat===winnerSeat?"🏆 ":"")+(pl.playerName||pl.name);const sm=document.createElement("small");sm.textContent=uiText(pl.name);nm.append(b,sm);top.append(av,nm);card.appendChild(top);
    const titleBadge=document.createElement("div");titleBadge.className="postTitleBadge";titleBadge.textContent=`🏅 ${matchTitle(s)}`;card.appendChild(titleBadge);
    const vals=document.createElement("div");vals.className="postStatValues";
-   vals.innerHTML=`<span>👣 <b>${s.moves||0}</b><small>ходы</small></span><span>⛓️ <b>${s.captures||0}</b><small>плен</small></span><span>🎲 <b>${s.kush||0}</b><small>куши</small></span><span>🕳️ <b>${s.traps||0}</b><small>ловушки</small></span><span>🧭 <b>${s.trapExits||0}</b><small>выходы</small></span><span>🏠 <b>${s.home||0}</b><small>Домик</small></span>`;
+   vals.innerHTML=`<span>👣 <b>${s.moves||0}</b><small>${uiText("ходы")}</small></span><span>⛓️ <b>${s.captures||0}</b><small>${uiText("плен")}</small></span><span>🎲 <b>${s.kush||0}</b><small>${uiText("куши")}</small></span><span>🕳️ <b>${s.traps||0}</b><small>${uiText("ловушки")}</small></span><span>🧭 <b>${s.trapExits||0}</b><small>${uiText("выходы")}</small></span><span>🏠 <b>${s.home||0}</b><small>${uiText("Домик")}</small></span>`;
    card.appendChild(vals);grid.appendChild(card);
  });
  box.appendChild(grid);
@@ -350,7 +385,7 @@ function drawBoard(){
  // Home lane / Domik
  Object.entries(HOME).forEach(([col,arr])=>arr.forEach((p,i)=>E("rect",{x:p[0]-23,y:p[1]-23,width:46,height:46,rx:7,fill:i===4?"#bf8b50":"url(#cellGrad)",stroke:"#674326","stroke-width":3,filter:"url(#shadow)"})));
  E("rect",{x:468,y:468,width:64,height:64,rx:10,fill:"#6f4a2d",stroke:"#3e2718","stroke-width":4,filter:"url(#shadow)"});
- let ct=E("text",{x:500,y:507,class:"smalltxt","text-anchor":"middle",fill:"#fff"});ct.textContent="ДОМИК";
+ let ct=E("text",{x:500,y:507,class:"smalltxt","text-anchor":"middle",fill:"#fff"});ct.textContent=uiText("ДОМИК");
 
  // Piece yards
  Object.entries(YARD).forEach(([col,arr])=>arr.forEach((p,i)=>{
@@ -363,7 +398,7 @@ function drawBoard(){
  // Base labels
  Object.entries(START).forEach(([col,idx])=>{
    let p=TRACK[idx],t=E("text",{x:p[0],y:p[1]+6,class:"smalltxt","text-anchor":"middle",opacity:.62,"pointer-events":"none"});
-   t.textContent="БАЗА"
+   t.textContent=uiText("БАЗА")
  });
 
  // Trap cells exactly like original layout, parallel to nearby outer cells
@@ -420,12 +455,12 @@ function renderSeatBadges(){
    const remote=onlineActive()?window.MondavoshkaOnline?.players?.find?.(x=>x.seat===pl.owner):null;
    const isMe=(Number.isInteger(onlineSeat)&&onlineSeat===pl.owner)||pl.playerName==="Вы";
    el.hidden=false;el.className=`seatBadge ${seatBadgeId(pl.id).slice(1)} seatRing-${pl.id}`+(isMe?" isMe":"");
-   el.title=`${pl.playerName||remote?.name||"Игрок"} — ${pl.name}`;
+   el.title=`${pl.playerName||remote?.name||uiText("Игрок")} — ${uiText(pl.name)}`;
    const avatar=document.createElement("div");avatar.className="seatAvatar";
    window.MondavoshkaProfile?.paintAvatar?.(avatar,remote?.avatar||pl.avatar||(pl.bot?"animal:bear":"animal:tiger"),pl.bot?"🤖":"🐯");
    if(pl.bot&&!remote){avatar.replaceChildren();const s=document.createElement("span");s.textContent="🤖";avatar.appendChild(s)}
    el.appendChild(avatar);
-   if(isMe){const you=document.createElement("b");you.className="seatYou";you.textContent="ВЫ";el.appendChild(you)}
+   if(isMe){const you=document.createElement("b");you.className="seatYou";you.textContent=uiText("ВЫ");el.appendChild(you)}
    if(onlineActive()){
      const misses=Number(window.MondavoshkaOnline?.misses?.[pl.owner])||0;
      const dots=document.createElement("div");dots.className="seatMissDots";for(let i=0;i<3;i++){const d=document.createElement("i");if(i<misses)d.className="used";dots.appendChild(d)}el.appendChild(dots)
@@ -450,8 +485,13 @@ function buildGameState(n,wish=selectedWish){
    doubleStreak:0,
    doubleStreakSeat:null,
    tripleKushPending:false,
-   matchStats:colorSet.map(()=>({moves:0,captures:0,traps:0,trapExits:0,kush:0,tripleKush:0,home:0})),
+   matchStats:colorSet.map(()=>({moves:0,captures:0,traps:0,trapExits:0,kush:0,tripleKush:0,home:0,maxDeficit:0})),
    firstBloodDone:false,
+   turnCaptureSeat:0,
+   turnCaptures:0,
+   lastPieceShown:Array(colorSet.length).fill(false),
+   matchId:`m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,
+   localResultReported:false,
 
    forfeit:wish
  };
@@ -463,6 +503,7 @@ function activateGameState(state,mode="local",statusText="Бросьте две 
  const exitBtn=$("#exitGame");if(exitBtn)exitBtn.hidden=false;
  g=JSON.parse(JSON.stringify(state));
  ensureMatchStats();
+ updateHomeDeficits();
  closeGameMenus();
  clearDice();
  preview=null;
@@ -1029,7 +1070,7 @@ function updateTripleKushCard(){
  const pending=!!g?.tripleKushPending;
  card.hidden=!pending;
  if(text&&pending){
-   text.textContent="Три куша подряд! Выберите зелёную фишку из базы или с поля — она сразу отправится в Домик. Пятую фишку этим бонусом ставить нельзя.";
+   text.textContent=uiText("Три куша подряд! Выберите зелёную фишку из базы или с поля — она сразу отправится в Домик. Пятую фишку этим бонусом ставить нельзя.");
  }
 }
 function activateTripleKushBonus(){
@@ -1053,7 +1094,7 @@ function activateTripleKushBonus(){
 
  g.tripleKushPending=true;
  bumpStat(g.turn,"tripleKush");
- showGameEvent("3 КУША!","triple","Бонусная фишка в Домик");
+ showGameEvent(window.partisT?.("event.tripleKush","ТРОЙНОЙ КУШ!")||"ТРОЙНОЙ КУШ!","triple","Бонусная фишка в Домик");
  updateTripleKushCard();
  return true;
 }
@@ -1529,9 +1570,20 @@ async function capture(pc, captorSide){
   const captorOwner=g.players.find(x=>x.id===captorSide)?.owner;
   const firstKill=!g.firstBloodDone;
   g.firstBloodDone=true;
-  if(Number.isInteger(captorOwner))bumpStat(captorOwner,"captures");
-  if(firstKill)showGameEvent("ПЕРВОЕ УБИЙСТВО!","firstkill","Первая фишка соперника выбита в этой партии");
-  else showGameEvent("ПЛЕН!","capture","Фишка соперника захвачена");
+  let turnKills=0;
+  if(Number.isInteger(captorOwner)){
+    bumpStat(captorOwner,"captures");
+    if(g.turnCaptureSeat!==captorOwner){g.turnCaptureSeat=captorOwner;g.turnCaptures=0}
+    g.turnCaptures=(Number(g.turnCaptures)||0)+1;turnKills=g.turnCaptures;
+  }
+  if(firstKill){
+    showGameEvent(window.partisT?.("event.firstKill","ПЕРВОЕ УБИЙСТВО!")||"ПЕРВОЕ УБИЙСТВО!","firstkill","Первая фишка соперника выбита в этой партии");
+  }else if(turnKills===2){
+    showGameEvent(window.partisT?.("event.doubleKill","ДВОЙНОЕ УБИЙСТВО!")||"ДВОЙНОЕ УБИЙСТВО!","doublekill","Две фишки соперников взяты за один ход");
+    if(captorOwner===localProfileSeat())window.MondavoshkaProfile?.unlockAchievement?.("double_kill");
+  }else{
+    showGameEvent("ПЛЕН!","capture","Фишка соперника захвачена");
+  }
   const pl=g.players[pc.owner];
   const p=pos(pc,pl);
   const el=svg.querySelector(`[data-id="${pc.id}"]`);
@@ -1702,6 +1754,8 @@ function finishTurn(){
    g.doubleStreak=0;
    g.doubleStreakSeat=null;
    g.turn=nextActiveSeat(g.turn);
+   g.turnCaptureSeat=g.turn;
+   g.turnCaptures=0;
  }
  updateUI();
  renderPieces();
@@ -1939,7 +1993,7 @@ function toggleSfx(){
 }
 function updateSfxButton(){
  const b=$("#sfxToggle");
- if(b)b.textContent=sfxEnabled?"🔊 Звуки: вкл":"🔇 Звуки: выкл";
+ if(b)b.textContent=uiText(sfxEnabled?"🔊 Звуки: вкл":"🔇 Звуки: выкл");
 }
 
 function pluck(freq,duration=.55,volume=.035,type="triangle"){
@@ -2004,7 +2058,7 @@ function toggleMusic(){
 }
 function updateMusicButton(){
  const b=$("#musicToggle");
- if(b) b.textContent=musicEnabled ? "♫ Музыка: вкл" : "♫ Музыка: выкл";
+ if(b) b.textContent=uiText(musicEnabled ? "♫ Музыка: вкл" : "♫ Музыка: выкл");
 }
 
 
@@ -2019,17 +2073,23 @@ document.addEventListener("keydown",unlockMusicOnce,{once:false});
 
 function updateUI(){
  let p=player();
- $("#player").textContent=isBotTurn()?`${p.playerName||"Компьютер"} — ${p.name}`:playerLabel(p);
+ const displayName=p.playerName||uiText("Компьютер");
+ $("#player").textContent=isBotTurn()?`${displayName} — ${uiText(p.name)}`:uiPlayerLabel(playerLabel(p));
  $("#player").style.color=p.id==="red"?"#c51c29":p.id==="blue"?"#007e92":p.id==="black"?"#111":"#164b8c";
  const order=$("#turnOrder");
- if(order) order.textContent=g.players.map(x=>`${playerLabel(x)}${x.eliminated?" (выбыл)":""}`).join(" → ");
+ if(order) order.textContent=g.players.map(x=>`${uiPlayerLabel(playerLabel(x))}${x.eliminated?uiText(" (выбыл)"):""}`).join(" → ");
  const you=$("#youAre");
  if(you){
    if(gameMode==="online"&&window.MondavoshkaOnline?.active){
      const seat=window.MondavoshkaOnline.seat;
      const mine=g.players[seat];
-     if(mine){you.hidden=false;you.textContent=`Вы играете: ${mine.playerName||window.MondavoshkaOnline.name||"Игрок"} — ${mine.name}`;}
-     else you.hidden=true;
+     if(mine){
+       const who=mine.playerName||window.MondavoshkaOnline.name||uiText("Игрок");
+       you.hidden=false;
+       you.textContent=(window.PartisI18n?.language==="sah")
+         ?`Эһиги оонньуугут: ${who} — ${uiText(mine.name)}`
+         :`Вы играете: ${who} — ${mine.name}`;
+     } else you.hidden=true;
    }else you.hidden=true;
  }
 }
@@ -2052,22 +2112,36 @@ function startFireworks(){
 function showVictory(seat,statusText=""){
  const pl=g?.players?.[seat];if(!pl)return;
  const modal=$("#victoryModal"),title=$("#victoryTitle"),sub=$("#victorySubtitle");
- if(title)title.textContent=`${pl.playerName||"Игрок"} победил!`;
- if(sub)sub.textContent=`Победные фишки: ${pl.name}. Все 5 фишек в Домике.`+(statusText?` ${statusText}`:"");
+ const comeback=(Number(matchStat(seat)?.maxDeficit)||0)>=2;
+ if(comeback){
+   showGameEvent(window.partisT?.("event.comeback","КАМБЭК!")||"КАМБЭК!","comeback","Победа после серьёзного отставания");
+ }
+ if(title)title.textContent=uiText(`${pl.playerName||"Игрок"} победил!`);
+ if(sub)sub.textContent=uiText(`Победные фишки: ${pl.name}. Все 5 фишек в Домике.${comeback?" 🔄 Камбэк!":""}`)+(statusText?` ${uiText(statusText)}`:"");
  renderPostMatchStats(seat);checkLocalAchievements(seat);
+ if(gameMode==="bot"&&!g.localResultReported){
+   g.localResultReported=true;
+   const localSeat=localProfileSeat();
+   if(localSeat!=null)window.MondavoshkaProfile?.reportLocalMatch?.(g.matchId||`bot-${Date.now()}`,seat===localSeat);
+ }
  modal?.classList.add("show");startFireworks();
 }
 function showMatchEnded(statusText="Партия завершена."){
  const modal=$("#victoryModal"),title=$("#victoryTitle"),sub=$("#victorySubtitle");
- if(title)title.textContent="Партия завершена";
- if(sub)sub.textContent=statusText;
+ if(title)title.textContent=uiText("Партия завершена");
+ if(sub)sub.textContent=uiText(statusText);
  renderPostMatchStats(null);
  modal?.classList.add("show");
  startFireworks();
 }
 function closeVictory(){stopFireworks();$("#victoryModal")?.classList.remove("show")}
 
-function setStatus(s){$("#status").textContent=s}
+function setStatus(s){
+ const el=$("#status");if(!el)return;
+ const source=String(s??"");
+ el.dataset.source=source;
+ el.textContent=uiText(source);
+}
 function closeGameMenus(){
   ["#mainMenu","#localModal","#botModal","#randomOnlineModal","#onlineCreateModal","#onlineJoinModal","#onlineLobbyModal","#wheelModal"].forEach(sel=>{
     const el=$(sel); if(el) el.classList.remove("show");
@@ -2091,14 +2165,25 @@ const TUTORIAL_STEPS=[
  {icon:"⛓️",title:"Плен и ловушка",text:"Попав на клетку соперника, вы берёте его фишку в плен. В ловушке движение идёт по значениям 1 → 3 → 6. Для выкупа пленника нужна шестёрка."},
  {icon:"🔥",title:"Три куша",text:"Если один игрок выбросил три куша подряд, до розыгрыша третьего куша он выбирает одну допустимую фишку и сразу отправляет её в Домик. Пятую фишку так поставить нельзя."}
 ];
+const TUTORIAL_STEPS_SAH=[
+ {icon:"🎲",title:"Кубиктар",text:"Икки кубик быраҕыллар. Хаамыы кубик ахсын тус-туспа оҥоһуллар: бастатан улахан, онтон кыра. Биир эмэ суолталаах икки биир чыыһыла — куш — эбии быраҕыыны биэрэр."},
+ {icon:"🚪",title:"Баазаттан тахсыы",text:"Саҥа фишканы Баазаттан таһаарыахха туспа 6 наада. Сыал — хас фишка ахсын биир толору эргийиини ааһарыы."},
+ {icon:"🏠",title:"Дьиэ",text:"Толору эргийии кэнниттэн фишка бэйэтин БААЗА клеткатыгар төннөр. Онтон анаан ис суолга — Дьиэҕэ — киирэр. Бары 5 фишкатын бастакы киллэрбит оонньооччу кыайар."},
+ {icon:"⛓️",title:"Тутуу уонна хапсаҕай",text:"Атын оонньооччу клеткатыгар түбэһэн, кини фишкатын тутуоххутун сөп. Хапсаҕай иһигэр 1 → 3 → 6 чыыһылаларынан хаамыллар."},
+ {icon:"🔥",title:"Үс куш",text:"Биир оонньооччу үс кушу субуруччу бырахтаҕына, үһүс куш иннинэ биир сөптөөх фишканы талан Дьиэҕэ туруорар. Тиһэх, бэһис фишканы бу бонуска киллэрэр кыаллыбат."}
+];
 let tutorialIndex=0;
-function renderTutorial(){const s=TUTORIAL_STEPS[tutorialIndex];if(!s)return;$("#tutorialIcon").textContent=s.icon;$("#tutorialTitle").textContent=s.title;$("#tutorialText").textContent=s.text;$("#tutorialStepLabel").textContent=`${tutorialIndex+1} / ${TUTORIAL_STEPS.length}`;const dots=$("#tutorialDots");dots.replaceChildren();TUTORIAL_STEPS.forEach((_,i)=>{const b=document.createElement("i");if(i===tutorialIndex)b.className="active";dots.appendChild(b)});$("#tutorialPrev").disabled=tutorialIndex===0;$("#tutorialNext").textContent=tutorialIndex===TUTORIAL_STEPS.length-1?"Понятно ✓":"Далее →"}
+function renderTutorial(){const steps=TUTORIAL_STEPS;const s=steps[tutorialIndex];if(!s)return;$("#tutorialIcon").textContent=s.icon;$("#tutorialTitle").textContent=uiText(s.title);$("#tutorialText").textContent=uiText(s.text);$("#tutorialStepLabel").textContent=`${tutorialIndex+1} / ${steps.length}`;const dots=$("#tutorialDots");dots.replaceChildren();steps.forEach((_,i)=>{const b=document.createElement("i");if(i===tutorialIndex)b.className="active";dots.appendChild(b)});$("#tutorialPrev").disabled=tutorialIndex===0;$("#tutorialNext").textContent=tutorialIndex===steps.length-1?uiText("Понятно ✓"):uiText("Далее →")}
 function openTutorial(force=true){tutorialIndex=0;renderTutorial();$("#tutorialModal")?.classList.add("show");if(force)try{localStorage.setItem("partis-tutorial-seen","1")}catch{}}
 function maybeShowTutorial(){let seen=false;try{seen=localStorage.getItem("partis-tutorial-seen")==="1"}catch{}if(!seen)setTimeout(()=>openTutorial(true),450)}
 $("#openTutorial")?.addEventListener("click",()=>openTutorial(true));
 $("#closeTutorial")?.addEventListener("click",()=>$("#tutorialModal")?.classList.remove("show"));
 $("#tutorialPrev")?.addEventListener("click",()=>{if(tutorialIndex>0){tutorialIndex--;renderTutorial()}});
 $("#tutorialNext")?.addEventListener("click",()=>{if(tutorialIndex<TUTORIAL_STEPS.length-1){tutorialIndex++;renderTutorial()}else $("#tutorialModal")?.classList.remove("show")});
+
+window.addEventListener("partis-language-changed",()=>{
+ try{updateSfxButton();updateMusicButton();if(g){drawBoard();updateUI();renderPostMatchStats(g?.gameOver?g?.winnerSeat:null)}if($("#tutorialModal")?.classList.contains("show"))renderTutorial()}catch(e){}
+});
 
 $("#playLocal").onclick=()=>{
   closeGameMenus();
@@ -2142,9 +2227,9 @@ $("#newGame").onclick=showMainMenu;
 $("#exitGame").onclick=()=>{
  const modal=$("#exitGameModal"),text=$("#exitGameText");
  if(text){
-   text.textContent=(gameMode==="online"&&window.MondavoshkaOnline?.active)
+   text.textContent=uiText((gameMode==="online"&&window.MondavoshkaOnline?.active)
      ?"Если выйти из онлайн-партии, это будет считаться добровольным поражением. Партия завершится для всех остальных игроков."
-     :"Текущая партия завершится, и вы вернётесь в главное меню.";
+     :"Текущая партия завершится, и вы вернётесь в главное меню.");
  }
  modal?.classList.add("show");
 };
@@ -2173,6 +2258,7 @@ document.addEventListener("visibilitychange",()=>{
   }
 });
 
+window.addEventListener("partis-language-changed",()=>{try{if(g)drawBoard();if($("#tutorialModal")?.classList.contains("show"))renderTutorial()}catch{}});
 window.MondavoshkaVictory={show:showVictory,showEnded:showMatchEnded,close:closeVictory};
 
 window.refreshPartisBoard=()=>{try{if(g)drawBoard()}catch(e){console.warn("Partis board refresh",e)}};
