@@ -91,9 +91,10 @@
   table_neon:{grain:"#302442",grainLine:"#1ed7c7",cellTop:"#ece7f5",cellMid:"#c9bddb",cellBottom:"#9b88b5",baseTop:"#f6f1ff",baseBottom:"#bca9d8",woodTop:"#5b3678",woodMid:"#34204b",woodBottom:"#171221",center:"#c7bdd4",frame:"#0de0ce",inner:"#d94df0"},
   table_north:{grain:"#294d58",grainLine:"#50c9a5",cellTop:"#e9f5ee",cellMid:"#c7dfd5",cellBottom:"#94beb1",baseTop:"#f7fff9",baseBottom:"#aed7c7",woodTop:"#3d7680",woodMid:"#2c5960",woodBottom:"#19353c",center:"#c7ddd8",frame:"#193941",inner:"#73d5b7"}
  };
- const S={id:null,name:"Игрок",rating:0,balance:0,wins:0,games:0,winStreak:0,bestWinStreak:0,daily:null,owned:["default"],equipped:"default",avatar:"animal:tiger",ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],authorized:false,player:null,payments:null,catalog:new Map()};
+ const S={id:null,friendCode:"",name:"Игрок",rating:0,balance:0,wins:0,games:0,winStreak:0,bestWinStreak:0,daily:null,owned:["default"],equipped:"default",avatar:"animal:tiger",ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],authorized:false,player:null,payments:null,catalog:new Map()};
  let leaderboardDebounce=null;
  const achievementPending=new Set();
+ const SOCIAL={friends:[],recent:[],invites:[],pollTimer:null};
 
  function serverBase(){const ws=String(window.MONDAVOSHKA_WS_URL||"").trim();if(ws)return ws.replace(/^wss:/,"https:").replace(/^ws:/,"http:").replace(/\/ws\/?$/,"");return location.origin}
  function cleanId(v){return String(v||"").replace(/[^a-zA-Z0-9_.:-]/g,"").slice(0,120)}
@@ -104,9 +105,9 @@
  async function waitSdk(ms=3500){const start=Date.now();while(Date.now()-start<ms){if(window.ysdk)return window.ysdk;await new Promise(r=>setTimeout(r,100))}return null}
  async function api(path,opts={}){const res=await fetch(serverBase()+path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})}});if(!res.ok){let msg=await res.text();try{msg=JSON.parse(msg).error||msg}catch{}throw new Error(msg||`HTTP ${res.status}`)}return res.json()}
  async function syncServer(){try{const p=await api("/api/sync-profile",{method:"POST",body:JSON.stringify(snapshot())});applyServerProfile(p.profile||p,false)}catch(e){console.warn("Profile sync failed",e)}}
- function applyServerProfile(p,persist=true){if(!p)return;S.rating=Math.max(0,+p.rating||0);S.balance=Math.max(0,+p.balance||0);S.wins=Math.max(0,+p.wins||0);S.games=Math.max(0,+p.games||0);S.winStreak=Math.max(0,+p.winStreak||0);S.bestWinStreak=Math.max(S.winStreak,+p.bestWinStreak||0);if(p.daily)S.daily=p.daily;if(Array.isArray(p.owned))S.owned=[...new Set(["default",...p.owned])];if(p.equipped)S.equipped=p.equipped;if(p.name)S.name=String(p.name).slice(0,24);if(p.avatar)S.avatar=p.avatar;if(Array.isArray(p.ownedTables))S.ownedTables=[...new Set(["table_classic",...p.ownedTables])];if(p.equippedTable)S.equippedTable=p.equippedTable;if(Array.isArray(p.ownedDice))S.ownedDice=[...new Set(["dice_ivory",...p.ownedDice])];if(p.equippedDice)S.equippedDice=p.equippedDice;if(Array.isArray(p.achievements))S.achievements=[...new Set(p.achievements)];saveFallback();renderProfile();renderShop();renderProfileModal();renderDaily();applyCosmetics();if(persist)persistYandex();setTimeout(checkProfileAchievements,0)}
+ function applyServerProfile(p,persist=true){if(!p)return;if(p.friendCode)S.friendCode=String(p.friendCode);S.rating=Math.max(0,+p.rating||0);S.balance=Math.max(0,+p.balance||0);S.wins=Math.max(0,+p.wins||0);S.games=Math.max(0,+p.games||0);S.winStreak=Math.max(0,+p.winStreak||0);S.bestWinStreak=Math.max(S.winStreak,+p.bestWinStreak||0);if(p.daily)S.daily=p.daily;if(Array.isArray(p.owned))S.owned=[...new Set(["default",...p.owned])];if(p.equipped)S.equipped=p.equipped;if(p.name)S.name=String(p.name).slice(0,24);if(p.avatar)S.avatar=p.avatar;if(Array.isArray(p.ownedTables))S.ownedTables=[...new Set(["table_classic",...p.ownedTables])];if(p.equippedTable)S.equippedTable=p.equippedTable;if(Array.isArray(p.ownedDice))S.ownedDice=[...new Set(["dice_ivory",...p.ownedDice])];if(p.equippedDice)S.equippedDice=p.equippedDice;if(Array.isArray(p.achievements))S.achievements=[...new Set(p.achievements)];saveFallback();renderProfile();renderShop();renderProfileModal();renderDaily();applyCosmetics();if(persist)persistYandex();setTimeout(checkProfileAchievements,0)}
  async function persistYandex(){if(!S.player)return;try{await S.player.setStats({rating:S.rating,pointsBalance:S.balance,wins:S.wins,games:S.games})}catch{}try{await S.player.setData({ownedSkins:S.owned,equippedSkin:S.equipped,partisAvatar:S.avatar,partisOwnedTables:S.ownedTables,partisTable:S.equippedTable,partisOwnedDice:S.ownedDice,partisDice:S.equippedDice,partisAchievements:S.achievements,partisWinStreak:S.winStreak,partisBestWinStreak:S.bestWinStreak},true)}catch{}if(S.authorized&&window.ysdk?.leaderboards){clearTimeout(leaderboardDebounce);leaderboardDebounce=setTimeout(async()=>{try{const ok=await window.ysdk.isAvailableMethod?.("leaderboards.setScore");if(ok!==false)await window.ysdk.leaderboards.setScore("rating",S.rating)}catch{}},1200)}}
- async function initPlayer(){loadFallback();S.id=fallbackId();const ysdk=await waitSdk();if(ysdk){try{const p=await ysdk.getPlayer();S.player=p;S.id=cleanId(p.getUniqueID?.()||S.id)||S.id;S.authorized=!!p.isAuthorized?.();const nm=String(p.getName?.()||"").trim();if(S.authorized&&nm&&nm!=="unauthorized")S.name=nm.slice(0,24);try{const stats=await p.getStats(["rating","pointsBalance","wins","games"]);S.rating=Math.max(S.rating,+stats.rating||0);S.balance=Math.max(S.balance,+stats.pointsBalance||0);S.wins=Math.max(S.wins,+stats.wins||0);S.games=Math.max(S.games,+stats.games||0)}catch{}try{const data=await p.getData(["ownedSkins","equippedSkin","partisAvatar","partisOwnedTables","partisTable","partisOwnedDice","partisDice","partisAchievements","partisWinStreak","partisBestWinStreak"]);if(Array.isArray(data.ownedSkins))S.owned=[...new Set(["default",...data.ownedSkins])];if(data.equippedSkin)S.equipped=data.equippedSkin;if(data.partisAvatar)S.avatar=data.partisAvatar;if(Array.isArray(data.partisOwnedTables))S.ownedTables=[...new Set(["table_classic",...data.partisOwnedTables])];if(data.partisTable)S.equippedTable=data.partisTable;if(Array.isArray(data.partisOwnedDice))S.ownedDice=[...new Set(["dice_ivory",...data.partisOwnedDice])];if(data.partisDice)S.equippedDice=data.partisDice;if(Array.isArray(data.partisAchievements))S.achievements=[...new Set(data.partisAchievements)];if(data.partisWinStreak!=null)S.winStreak=Math.max(S.winStreak,+data.partisWinStreak||0);if(data.partisBestWinStreak!=null)S.bestWinStreak=Math.max(S.bestWinStreak,+data.partisBestWinStreak||0)}catch{}}catch(e){console.warn("Yandex player unavailable",e)}}await syncServer();await claimStoredAchievementRewards();renderProfile();renderShop();renderProfileModal();renderDaily();loadDaily();loadLeaderboard();initPayments();prefillNames();applyCosmetics();checkProfileAchievements()}
+ async function initPlayer(){loadFallback();S.id=fallbackId();const ysdk=await waitSdk();if(ysdk){try{const p=await ysdk.getPlayer();S.player=p;S.id=cleanId(p.getUniqueID?.()||S.id)||S.id;S.authorized=!!p.isAuthorized?.();const nm=String(p.getName?.()||"").trim();if(S.authorized&&nm&&nm!=="unauthorized")S.name=nm.slice(0,24);try{const stats=await p.getStats(["rating","pointsBalance","wins","games"]);S.rating=Math.max(S.rating,+stats.rating||0);S.balance=Math.max(S.balance,+stats.pointsBalance||0);S.wins=Math.max(S.wins,+stats.wins||0);S.games=Math.max(S.games,+stats.games||0)}catch{}try{const data=await p.getData(["ownedSkins","equippedSkin","partisAvatar","partisOwnedTables","partisTable","partisOwnedDice","partisDice","partisAchievements","partisWinStreak","partisBestWinStreak"]);if(Array.isArray(data.ownedSkins))S.owned=[...new Set(["default",...data.ownedSkins])];if(data.equippedSkin)S.equipped=data.equippedSkin;if(data.partisAvatar)S.avatar=data.partisAvatar;if(Array.isArray(data.partisOwnedTables))S.ownedTables=[...new Set(["table_classic",...data.partisOwnedTables])];if(data.partisTable)S.equippedTable=data.partisTable;if(Array.isArray(data.partisOwnedDice))S.ownedDice=[...new Set(["dice_ivory",...data.partisOwnedDice])];if(data.partisDice)S.equippedDice=data.partisDice;if(Array.isArray(data.partisAchievements))S.achievements=[...new Set(data.partisAchievements)];if(data.partisWinStreak!=null)S.winStreak=Math.max(S.winStreak,+data.partisWinStreak||0);if(data.partisBestWinStreak!=null)S.bestWinStreak=Math.max(S.bestWinStreak,+data.partisBestWinStreak||0)}catch{}}catch(e){console.warn("Yandex player unavailable",e)}}await syncServer();await claimStoredAchievementRewards();renderProfile();renderShop();renderProfileModal();renderDaily();loadDaily();loadLeaderboard();await loadSocial();startInvitePolling();initPayments();prefillNames();applyCosmetics();checkProfileAchievements()}
  function publicProfile(){return {id:S.id,name:S.name,skinId:S.equipped,rating:S.rating,avatar:S.avatar}}
  function getSkin(id){return SKINS.find(s=>s.id===id)||COUNTRY_SKINS.find(s=>s.id===id)||CLUB_PRODUCTS.find(x=>x.skinId===id)||SKINS[0]}
  function skinVisual(id){const s=SKINS.find(x=>x.id===id);if(s)return {color:s.color,name:s.name};const country=COUNTRY_SKINS.find(x=>x.id===id);if(country)return {color:country.color,name:country.name,flag:country.flag,emoji:country.emoji};const c=CLUB_PRODUCTS.find(x=>x.skinId===id);if(c)return {name:c.name,...(CLUB_VISUALS[id]||{color:"#bbb",stripe:"#777"})};return {color:null,name:"Классика"}}
@@ -133,7 +134,167 @@
  async function setAvatar(value){S.avatar=value;saveFallback();renderProfile();renderProfileModal();await syncServer();persistYandex()}
  async function photoToAvatar(file){return new Promise((resolve,reject)=>{if(!file||!file.type?.startsWith("image/"))return reject(new Error("Выберите изображение"));if(file.size>8*1024*1024)return reject(new Error("Фото слишком большое"));const fr=new FileReader();fr.onerror=()=>reject(new Error("Не удалось прочитать фото"));fr.onload=()=>{const img=new Image();img.onerror=()=>reject(new Error("Не удалось открыть фото"));img.onload=()=>{const size=64,c=document.createElement("canvas");c.width=c.height=size;const ctx=c.getContext("2d");const scale=Math.max(size/img.width,size/img.height),w=img.width*scale,h=img.height*scale;ctx.drawImage(img,(size-w)/2,(size-h)/2,w,h);let data=c.toDataURL("image/jpeg",.58);if(data.length>14000)data=c.toDataURL("image/jpeg",.42);resolve(data.length<=18000?data:"animal:tiger")};img.src=String(fr.result)};fr.readAsDataURL(file)})}
  async function handleAvatarUpload(file){try{const data=await photoToAvatar(file);await setAvatar(data)}catch(e){alert(e.message||"Не удалось обработать фото")}}
- function renderProfileModal(){paintAvatar(document.querySelector("#profileModalAvatar"),S.avatar);const n=document.querySelector("#profileModalName"),r=document.querySelector("#profileModalRating"),w=document.querySelector("#profileModalWins"),g=document.querySelector("#profileModalGames"),st=document.querySelector("#profileModalStreak"),best=document.querySelector("#profileBestStreak");if(n)n.textContent=S.name==="Игрок"?uiText("Игрок"):S.name;if(r)r.textContent=S.rating;if(w)w.textContent=S.wins;if(g)g.textContent=S.games;if(st)st.textContent=S.winStreak||0;if(best)best.textContent=uiText(`Лучшая серия: ${S.bestWinStreak||0}`);const cc=document.querySelector("#profileCurrentCosmetics");if(cc){const t=TABLES.find(x=>x.id===S.equippedTable)?.name||"Классический";const d=DICE.find(x=>x.id===S.equippedDice)?.name||"Слоновая кость";cc.textContent=window.PartisI18n?.language==="sah"?`Остуол: ${uiText(t)} · Кубиктар: ${uiText(d)}`:`Стол: ${t} · Кубики: ${d}`}const choices=document.querySelector("#avatarChoices");if(choices){choices.innerHTML="";AVATARS.forEach(a=>choices.appendChild(avatarChoiceButton(a)))}const ag=document.querySelector("#achievementGrid");if(ag){ag.innerHTML="";ACHIEVEMENTS.forEach(a=>{const unlocked=S.achievements.includes(a.id);const d=document.createElement("div");d.className="achievementCard"+(unlocked?" unlocked":" locked");d.innerHTML=`<span>${unlocked?a.icon:"🔒"}</span><div><b></b><small></small></div>`;d.querySelector("b").textContent=uiText(a.name);d.querySelector("small").textContent=uiText(a.text);const rw=document.createElement("em");rw.className="achievementReward";rw.textContent=`+${a.reward||0} 💰`;d.querySelector("div").appendChild(rw);ag.appendChild(d)})}}
+
+ function isFriend(id){return SOCIAL.friends.some(x=>x.id===id)}
+ function socialCard(p,kind="friend"){
+   const d=document.createElement("div");d.className="socialCard";
+   const av=document.createElement("div");av.className="socialAvatar";paintAvatar(av,p.avatar||"animal:tiger","🐯");
+   const meta=document.createElement("div");meta.className="socialMeta";
+   const b=document.createElement("b");b.textContent=p.name||uiText("Игрок");
+   const sm=document.createElement("small");sm.textContent=`🏆 ${Number(p.rating)||0}`;
+   const fc=document.createElement("small");fc.className="socialFriendCode";fc.textContent=p.friendCode?`${uiText("Код")}: ${p.friendCode}`:"";
+   meta.append(b,sm);if(p.friendCode)meta.append(fc);
+   const actions=document.createElement("div");actions.className="socialActions";
+   if(kind==="recent"&&!isFriend(p.id)){
+     const add=document.createElement("button");add.type="button";add.textContent=uiText("Добавить в друзья");add.onclick=async()=>{add.disabled=true;await addFriend(p.id);renderSocial()};actions.appendChild(add);
+   }
+   if(kind==="friend"){
+     const code=window.MondavoshkaOnline?.roomCode;
+     const canInvite=!!(window.MondavoshkaOnline?.active&&!window.MondavoshkaOnline?.started&&code);
+     const invite=document.createElement("button");invite.type="button";invite.textContent=uiText("Пригласить");
+     invite.disabled=!canInvite;
+     invite.title=canInvite?uiText("Пригласить в текущую комнату"):uiText("Сначала создайте онлайн-комнату");
+     invite.onclick=async()=>{invite.disabled=true;const ok=await sendFriendInvite(p.id);invite.textContent=ok?uiText("Отправлено ✓"):uiText("Ошибка");setTimeout(()=>{invite.textContent=uiText("Пригласить");invite.disabled=!canInvite},1600)};
+     const remove=document.createElement("button");remove.type="button";remove.className="socialRemove";remove.textContent="×";remove.title=uiText("Удалить из друзей");remove.onclick=async()=>{await removeFriend(p.id);renderSocial();if(d.closest("#friendSearchResult"))renderFriendSearchResult(p)};
+     actions.append(invite,remove);
+   }
+   d.append(av,meta,actions);return d;
+ }
+
+ function renderFriendIdentity(){
+   const idEl=document.querySelector("#myPlayerId"),codeEl=document.querySelector("#myFriendCode");
+   if(idEl)idEl.textContent=S.id||"—";
+   if(codeEl)codeEl.textContent=S.friendCode||"—";
+ }
+ async function copyText(value,button){
+   const text=String(value||"");if(!text||text==="—")return;
+   try{
+     await navigator.clipboard.writeText(text);
+     if(button){const old=button.textContent;button.textContent=uiText("Скопировано ✓");setTimeout(()=>button.textContent=old,1300)}
+   }catch{
+     try{
+       const ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();
+       if(button){const old=button.textContent;button.textContent=uiText("Скопировано ✓");setTimeout(()=>button.textContent=old,1300)}
+     }catch{}
+   }
+ }
+ function renderFriendSearchResult(p){
+   const box=document.querySelector("#friendSearchResult");if(!box)return;
+   box.replaceChildren();
+   if(!p)return;
+   const card=socialCard(p,isFriend(p.id)?"friend":"search");
+   if(p.self){
+     const note=document.createElement("div");note.className="friendSearchSelf";note.textContent=uiText("Это ваш профиль.");
+     card.appendChild(note);
+   }else if(!isFriend(p.id)){
+     const actions=card.querySelector(".socialActions");
+     const add=document.createElement("button");add.type="button";add.textContent=uiText("Добавить в друзья");
+     add.onclick=async()=>{add.disabled=true;const ok=await addFriend(p.id);if(ok){renderFriendSearchResult({...p});}else add.disabled=false};
+     actions?.appendChild(add);
+   }
+   box.appendChild(card);
+ }
+ async function findFriend(){
+   const input=document.querySelector("#friendSearchInput"),box=document.querySelector("#friendSearchResult"),btn=document.querySelector("#friendSearchBtn");
+   const q=String(input?.value||"").trim();
+   if(!q){if(box){box.innerHTML="";const e=document.createElement("div");e.className="ratingLoading";e.textContent=uiText("Введите ID игрока или код дружбы.");box.appendChild(e)}return}
+   if(btn)btn.disabled=true;
+   if(box){box.innerHTML="";const e=document.createElement("div");e.className="ratingLoading";e.textContent=uiText("Ищем игрока…");box.appendChild(e)}
+   try{
+     const d=await api(`/api/find-player?id=${encodeURIComponent(S.id||"")}&q=${encodeURIComponent(q)}`);
+     renderFriendSearchResult(d?.player||null);
+   }catch(e){
+     if(box){box.innerHTML="";const n=document.createElement("div");n.className="ratingLoading";n.textContent=uiText(e.message||"Игрок не найден.");box.appendChild(n)}
+   }finally{if(btn)btn.disabled=false}
+ }
+ function renderLobbyFriends(){
+   const wrap=document.querySelector("#lobbyFriendsInvite"),box=document.querySelector("#lobbyFriendsList");
+   if(!wrap||!box)return;
+   const online=window.MondavoshkaOnline;
+   const visible=!!(online?.active&&!online?.started&&online?.roomCode&&SOCIAL.friends.length);
+   wrap.hidden=!visible;box.replaceChildren();if(!visible)return;
+   for(const p of SOCIAL.friends){
+     const row=document.createElement("div");row.className="lobbyFriendRow";
+     const av=document.createElement("div");av.className="lobbyFriendAvatar";paintAvatar(av,p.avatar||"animal:tiger","🐯");
+     const name=document.createElement("span");name.textContent=p.name||uiText("Игрок");
+     const btn=document.createElement("button");btn.type="button";btn.textContent=uiText("Пригласить");
+     btn.onclick=async()=>{btn.disabled=true;const ok=await sendFriendInvite(p.id);btn.textContent=ok?uiText("Отправлено ✓"):uiText("Ошибка");setTimeout(()=>{btn.textContent=uiText("Пригласить");btn.disabled=false},1600)};
+     row.append(av,name,btn);box.appendChild(row);
+   }
+ }
+ function renderSocial(){
+   const fg=document.querySelector("#friendsGrid"),rg=document.querySelector("#recentPlayersGrid");
+   if(fg){
+     fg.replaceChildren();
+     if(!SOCIAL.friends.length){const e=document.createElement("div");e.className="ratingLoading";e.textContent=uiText("Друзей пока нет.");fg.appendChild(e)}
+     else SOCIAL.friends.forEach(p=>fg.appendChild(socialCard(p,"friend")));
+   }
+   if(rg){
+     rg.replaceChildren();
+     const recent=SOCIAL.recent.filter(p=>p.id!==S.id);
+     if(!recent.length){const e=document.createElement("div");e.className="ratingLoading";e.textContent=uiText("Недавних игроков пока нет.");rg.appendChild(e)}
+     else recent.forEach(p=>rg.appendChild(socialCard(p,"recent")));
+   }
+ }
+ async function loadSocial(){
+   if(!S.id)return;
+   try{
+     const d=await api(`/api/social?id=${encodeURIComponent(S.id)}`);
+     SOCIAL.friends=Array.isArray(d?.social?.friends)?d.social.friends:[];
+     SOCIAL.recent=Array.isArray(d?.social?.recent)?d.social.recent:[];
+     renderSocial();renderLobbyFriends();
+   }catch(e){console.warn("Social load failed",e)}
+ }
+ async function addFriend(targetId){
+   if(!S.id||!targetId)return false;
+   try{
+     const d=await api("/api/add-friend",{method:"POST",body:JSON.stringify({id:S.id,targetId})});
+     SOCIAL.friends=Array.isArray(d?.social?.friends)?d.social.friends:SOCIAL.friends;
+     SOCIAL.recent=Array.isArray(d?.social?.recent)?d.social.recent:SOCIAL.recent;
+     renderSocial();renderLobbyFriends();return true;
+   }catch(e){alert(e.message||uiText("Не удалось добавить друга"));return false}
+ }
+ async function removeFriend(targetId){
+   if(!S.id||!targetId)return false;
+   try{
+     const d=await api("/api/remove-friend",{method:"POST",body:JSON.stringify({id:S.id,targetId})});
+     SOCIAL.friends=Array.isArray(d?.social?.friends)?d.social.friends:[];
+     SOCIAL.recent=Array.isArray(d?.social?.recent)?d.social.recent:SOCIAL.recent;
+     renderSocial();renderLobbyFriends();return true;
+   }catch(e){alert(e.message||uiText("Не удалось удалить друга"));return false}
+ }
+ async function sendFriendInvite(targetId){
+   const code=window.MondavoshkaOnline?.roomCode;
+   if(!S.id||!targetId||!code)return false;
+   try{await api("/api/send-invite",{method:"POST",body:JSON.stringify({id:S.id,targetId,code})});return true}
+   catch(e){alert(e.message||uiText("Не удалось отправить приглашение"));return false}
+ }
+ function renderInviteBanner(){
+   const box=document.querySelector("#friendInviteBanner");if(!box)return;
+   const inv=SOCIAL.invites?.[0];
+   box.hidden=!inv;if(!inv)return;
+   paintAvatar(document.querySelector("#friendInviteAvatar"),inv.fromAvatar||"animal:tiger","🐯");
+   const t=document.querySelector("#friendInviteTitle"),tx=document.querySelector("#friendInviteText");
+   if(t)t.textContent=`${uiText("Приглашение от друга")}: ${inv.fromName||uiText("Игрок")}`;
+   if(tx)tx.textContent=`${uiText("Комната")} ${inv.code} · ${uiText("приглашение действует 2 минуты")}`;
+   const yes=document.querySelector("#acceptFriendInvite"),no=document.querySelector("#dismissFriendInvite");
+   if(yes)yes.onclick=async()=>{await dismissInvite(inv.inviteId);window.MondavoshkaOnline?.joinInvite?.(inv.code)};
+   if(no)no.onclick=()=>dismissInvite(inv.inviteId);
+ }
+ async function loadInvites(){
+   if(!S.id)return;
+   try{const d=await api(`/api/invites?id=${encodeURIComponent(S.id)}`);SOCIAL.invites=Array.isArray(d?.invites)?d.invites:[];renderInviteBanner()}catch{}
+ }
+ async function dismissInvite(inviteId){
+   try{await api("/api/dismiss-invite",{method:"POST",body:JSON.stringify({id:S.id,inviteId})})}catch{}
+   SOCIAL.invites=SOCIAL.invites.filter(x=>x.inviteId!==inviteId);renderInviteBanner();
+ }
+ function startInvitePolling(){
+   clearInterval(SOCIAL.pollTimer);loadInvites();
+   SOCIAL.pollTimer=setInterval(()=>{if(!document.hidden)loadInvites()},6500);
+ }
+
+ function renderProfileModal(){paintAvatar(document.querySelector("#profileModalAvatar"),S.avatar);const n=document.querySelector("#profileModalName"),r=document.querySelector("#profileModalRating"),w=document.querySelector("#profileModalWins"),g=document.querySelector("#profileModalGames"),st=document.querySelector("#profileModalStreak"),best=document.querySelector("#profileBestStreak");if(n)n.textContent=S.name==="Игрок"?uiText("Игрок"):S.name;if(r)r.textContent=S.rating;if(w)w.textContent=S.wins;if(g)g.textContent=S.games;if(st)st.textContent=S.winStreak||0;if(best)best.textContent=uiText(`Лучшая серия: ${S.bestWinStreak||0}`);const cc=document.querySelector("#profileCurrentCosmetics");if(cc){const t=TABLES.find(x=>x.id===S.equippedTable)?.name||"Классический";const d=DICE.find(x=>x.id===S.equippedDice)?.name||"Слоновая кость";cc.textContent=window.PartisI18n?.language==="sah"?`Остуол: ${uiText(t)} · Кубиктар: ${uiText(d)}`:`Стол: ${t} · Кубики: ${d}`}const choices=document.querySelector("#avatarChoices");if(choices){choices.innerHTML="";AVATARS.forEach(a=>choices.appendChild(avatarChoiceButton(a)))}const ag=document.querySelector("#achievementGrid");if(ag){ag.innerHTML="";ACHIEVEMENTS.forEach(a=>{const unlocked=S.achievements.includes(a.id);const d=document.createElement("div");d.className="achievementCard"+(unlocked?" unlocked":" locked");d.innerHTML=`<span>${unlocked?a.icon:"🔒"}</span><div><b></b><small></small></div>`;d.querySelector("b").textContent=uiText(a.name);d.querySelector("small").textContent=uiText(a.text);const rw=document.createElement("em");rw.className="achievementReward";rw.textContent=`+${a.reward||0} 💰`;d.querySelector("div").appendChild(rw);ag.appendChild(d)})}renderFriendIdentity();renderSocial()}
  async function claimStoredAchievementRewards(){
   if(!S.id)return;
   try{
@@ -236,13 +397,18 @@
      if(toast){toast.textContent=uiText(`📅 Ежедневное задание · +${reward} очков`);toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),2800)}
    }
  }
- window.addEventListener("partis-language-changed",()=>{renderProfile();renderProfileModal();renderDaily();renderShop();loadLeaderboard()});
+ window.addEventListener("partis-language-changed",()=>{renderProfile();renderProfileModal();renderDaily();renderShop();renderSocial();renderLobbyFriends();renderInviteBanner();loadLeaderboard()});
 
  function openModal(id){document.querySelectorAll(".modal").forEach(x=>x.classList.remove("show"));document.querySelector(id)?.classList.add("show")}
  function closeToMenu(){document.querySelectorAll(".modal").forEach(x=>x.classList.remove("show"));document.querySelector("#mainMenu")?.classList.add("show");loadLeaderboard()}
  function awardFromServer(profile,delta,matchPoints,reason=""){applyServerProfile(profile);const el=document.querySelector("#matchPoints");if(el)el.textContent=String(matchPoints||0);const toast=document.querySelector("#ratingToast");if(toast&&delta){toast.textContent=uiText(reason||`+${delta} очков за фишку в Домике`);toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),2200)}loadLeaderboard()}
- document.querySelector("#openRating")?.addEventListener("click",()=>{openModal("#ratingModal");loadLeaderboard()});document.querySelector("#openShop")?.addEventListener("click",()=>{openModal("#shopModal");renderShop()});document.querySelector("#openDaily")?.addEventListener("click",()=>{openModal("#dailyModal");loadDaily()});document.querySelector("#openProfile")?.addEventListener("click",()=>{openModal("#profileModal");renderProfileModal()});document.querySelector("#profileAvatarButton")?.addEventListener("click",()=>{openModal("#profileModal");renderProfileModal()});document.querySelector("#profileLogin")?.addEventListener("click",login);document.querySelector("#avatarUploadBtn")?.addEventListener("click",()=>document.querySelector("#avatarUpload")?.click());document.querySelector("#avatarUpload")?.addEventListener("change",e=>{const f=e.target.files?.[0];if(f)handleAvatarUpload(f);e.target.value=""});document.querySelectorAll(".hubBack").forEach(b=>b.addEventListener("click",closeToMenu));
+ document.querySelector("#openRating")?.addEventListener("click",()=>{openModal("#ratingModal");loadLeaderboard()});document.querySelector("#openShop")?.addEventListener("click",()=>{openModal("#shopModal");renderShop()});document.querySelector("#openDaily")?.addEventListener("click",()=>{openModal("#dailyModal");loadDaily()});document.querySelector("#openProfile")?.addEventListener("click",()=>{openModal("#profileModal");renderProfileModal()});document.querySelector("#profileAvatarButton")?.addEventListener("click",()=>{openModal("#profileModal");renderProfileModal()});document.querySelector("#profileLogin")?.addEventListener("click",login);document.querySelector("#refreshSocial")?.addEventListener("click",loadSocial);
+ document.querySelector("#friendSearchBtn")?.addEventListener("click",findFriend);
+ document.querySelector("#friendSearchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();findFriend()}});
+ document.querySelector("#copyPlayerId")?.addEventListener("click",e=>copyText(S.id,e.currentTarget));
+ document.querySelector("#copyFriendCode")?.addEventListener("click",e=>copyText(S.friendCode,e.currentTarget));
+ document.querySelector("#avatarUploadBtn")?.addEventListener("click",()=>document.querySelector("#avatarUpload")?.click());document.querySelector("#avatarUpload")?.addEventListener("change",e=>{const f=e.target.files?.[0];if(f)handleAvatarUpload(f);e.target.value=""});document.querySelectorAll(".hubBack").forEach(b=>b.addEventListener("click",closeToMenu));
  function renderAllLocalized(){renderProfile();renderProfileModal();renderDaily();renderShop()}
- window.MondavoshkaProfile={state:S,skins:SKINS,countrySkins:COUNTRY_SKINS,clubProducts:CLUB_PRODUCTS,tables:TABLES,dice:DICE,achievements:ACHIEVEMENTS,publicProfile,skinVisual,tableVisual,diceVisual,avatarInfo,paintAvatar,applyServerProfile,awardFromServer,dailyAwardFromServer,loadLeaderboard,loadDaily,reportDaily,reportLocalMatch,unlockAchievement,renderProfileModal,renderAllLocalized,get equippedSkin(){return S.equipped},get equippedTable(){return S.equippedTable},get equippedDice(){return S.equippedDice},get avatar(){return S.avatar},get id(){return S.id},get name(){return S.name}};
+ window.MondavoshkaProfile={state:S,skins:SKINS,countrySkins:COUNTRY_SKINS,clubProducts:CLUB_PRODUCTS,tables:TABLES,dice:DICE,achievements:ACHIEVEMENTS,publicProfile,skinVisual,tableVisual,diceVisual,avatarInfo,paintAvatar,applyServerProfile,awardFromServer,dailyAwardFromServer,loadLeaderboard,loadDaily,reportDaily,reportLocalMatch,unlockAchievement,renderProfileModal,renderAllLocalized,loadSocial,addFriend,removeFriend,sendFriendInvite,findFriend,isFriend,renderLobbyFriends,get social(){return SOCIAL},get equippedSkin(){return S.equipped},get equippedTable(){return S.equippedTable},get equippedDice(){return S.equippedDice},get avatar(){return S.avatar},get id(){return S.id},get name(){return S.name}};
  initPlayer();
 })();

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Партис V51 — полный русский / саха интерфейс</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Партис V54 — друзья и уточнение ловушки</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -150,6 +150,11 @@
           <div><b>🔄 Есть незавершённая онлайн-партия</b><span>Попробовать восстановить ваше место в комнате.</span></div>
           <button id="resumeGameBtn" type="button">Вернуться в игру</button>
         </div>
+        <div id="friendInviteBanner" class="friendInviteBanner" hidden>
+          <div class="friendInviteAvatar" id="friendInviteAvatar"><span>🐯</span></div>
+          <div class="friendInviteText"><b id="friendInviteTitle">Приглашение от друга</b><span id="friendInviteText">Вас приглашают в онлайн-комнату.</span></div>
+          <div class="friendInviteActions"><button id="acceptFriendInvite" type="button">Войти</button><button id="dismissFriendInvite" type="button" aria-label="Закрыть">×</button></div>
+        </div>
         <div class="hubBody">
           <div class="mainMenuButtons">
             <button id="randomOnline" class="featuredMode" type="button"><span class="menuNum">⚔</span><span><b>Быстрая онлайн-игра</b><small>Найти случайных соперников</small></span></button>
@@ -171,7 +176,7 @@
             <button id="openShop" class="hubFeature" type="button"><b>🛍 Магазин</b><span>Фишки, столы, кубики и премиум-наборы</span></button>
             <button id="openTutorial" class="hubFeature" type="button"><b>🎓 Обучение</b><span>Коротко пройти правила перед первой партией</span></button>
             <button id="openDaily" class="hubFeature dailyFeature" type="button"><b>📅 Ежедневные задания</b><span id="dailyMenuSummary">3 задания · награды на баланс</span></button>
-            <div class="hubRules howToPlayShort"><b>Как играть — коротко</b><span>🎲 Ходите двумя костями по отдельности. 6 выводит фишку из Базы. Сделайте один полный круг и заведите все 5 фишек в Домик. Фишку соперника можно взять в плен. Куш даёт дополнительный бросок; 3 куша подряд дают бонусную фишку в Домик. В ловушке нужно пройти 1 → 3 → 6.</span></div>
+            <div class="hubRules howToPlayShort"><b>Как играть — коротко</b><span>🎲 Ходите двумя костями по отдельности. 6 выводит фишку из Базы. Сделайте один полный круг и заведите все 5 фишек в Домик. Фишку соперника можно взять в плен. Куш даёт дополнительный бросок; 3 куша подряд дают бонусную фишку в Домик. В ловушке нужно пройти 1 → 3 → 6. На специальных стрелках свои фишки могут толкать друг друга.</span></div>
             <div class="hubRules"><b>Онлайн-правило времени</b><span>Можно играть с таймером 25 секунд или без него. При таймере: 3 просрочки — поражение.</span></div>
           </div>
         </div>
@@ -196,6 +201,30 @@
         <h3>Выберите аватар</h3>
         <div id="avatarChoices" class="avatarChoices"></div>
         <div class="avatarUploadRow"><input id="avatarUpload" type="file" accept="image/*" hidden><button id="avatarUploadBtn" type="button">📷 Выбрать фото из галереи</button><small>Фото уменьшается до маленькой аватарки перед сохранением.</small></div>
+
+        <div class="profileSocialHead"><h3>👥 Друзья</h3><button id="refreshSocial" type="button">Обновить</button></div>
+        <p class="socialHint">После онлайн-партии соперника можно добавить в друзья. Также игрока можно найти по ID или коду дружбы.</p>
+
+        <div class="friendIdentity">
+          <div><small>Ваш ID игрока</small><strong id="myPlayerId">—</strong><button id="copyPlayerId" type="button">Копировать</button></div>
+          <div><small>Ваш код дружбы</small><strong id="myFriendCode">—</strong><button id="copyFriendCode" type="button">Копировать</button></div>
+        </div>
+
+        <div class="friendSearchBox">
+          <label for="friendSearchInput">Найти друга</label>
+          <div class="friendSearchRow">
+            <input id="friendSearchInput" type="text" maxlength="120" autocomplete="off" placeholder="ID игрока или код дружбы">
+            <button id="friendSearchBtn" type="button">Найти</button>
+          </div>
+          <small>Попросите друга прислать свой код дружбы — он короче и удобнее ID.</small>
+          <div id="friendSearchResult" class="friendSearchResult"></div>
+        </div>
+
+        <div id="friendsGrid" class="socialGrid"><div class="ratingLoading">Друзей пока нет.</div></div>
+
+        <h3>🕘 Недавние игроки</h3>
+        <div id="recentPlayersGrid" class="socialGrid"><div class="ratingLoading">Недавних игроков пока нет.</div></div>
+
         <h3>🏅 Достижения</h3><p class="achievementIntro">За достижения начисляются <b>очки на баланс</b>. Рейтинг от наград не меняется.</p>
         <div id="achievementGrid" class="achievementGrid"></div>
       </div>
@@ -261,7 +290,16 @@
             <option value="3">3 компьютера — все четыре цвета</option>
           </select>
         </label>
-        <p class="botHint"><b>Вы играете Красными.</b> Компьютер сам бросает кости и выбирает ход. Он старается брать фишки, выходить из ловушек и быстрее заводить свои фишки в Домик.</p>
+        <label>Характер компьютера
+          <select id="botPersonality">
+            <option value="mixed" selected>Разные характеры — интереснее</option>
+            <option value="adaptive">Адаптивный — запоминает удачные решения</option>
+            <option value="cautious">Осторожный — безопасность и Домик</option>
+            <option value="aggressive">Агрессивный — охота за пленом</option>
+            <option value="risky">Рискованный — стрелки и смелые ходы</option>
+          </select>
+        </label>
+        <p class="botHint"><b>У ботов теперь разные характеры.</b> Адаптивный бот сохраняет на этом устройстве вес удачных решений и постепенно подстраивает выбор ходов. Это игровая адаптация, а не нейросеть.</p>
         <div class="dialogActions">
           <button class="backToMenu" type="button">← Назад</button>
           <button id="startBot" type="button">Начать игру</button>
@@ -350,6 +388,10 @@
         <div id="lobbyPlayers" class="lobbyPlayers"></div>
         <div id="lobbyHint" class="onlineHint">Ожидание игроков…</div>
         <div id="lobbyTimerMode" class="lobbyTimerMode">⏱ Режим: 25 секунд на ход</div>
+        <div id="lobbyFriendsInvite" class="lobbyFriendsInvite" hidden>
+          <div class="lobbyFriendsHead"><b>👥 Пригласить друзей</b><small>Кнопка отправит код комнаты внутри Партис.</small></div>
+          <div id="lobbyFriendsList" class="lobbyFriendsList"></div>
+        </div>
         <label id="fillOnlineBotsWrap" class="fillBotsOffer" hidden>
           <input id="fillOnlineBots" type="checkbox"> Заполнить свободные места компьютерами до 4 игроков
           <small>Для 2–3 реальных игроков. Если не отмечать — играете только людьми.</small>
@@ -363,7 +405,7 @@
 
     <div class="modal" id="tutorialModal">
       <div class="dialog tutorialDialog">
-        <div class="tutorialProgress"><span id="tutorialStepLabel">1 / 5</span><button id="closeTutorial" type="button">✕</button></div>
+        <div class="tutorialProgress"><span id="tutorialStepLabel">1 / 6</span><button id="closeTutorial" type="button">✕</button></div>
         <div id="tutorialIcon" class="tutorialIcon">🎲</div>
         <h2 id="tutorialTitle">Добро пожаловать в Партис</h2>
         <p id="tutorialText"></p>
@@ -390,6 +432,7 @@
         <h2 id="victoryTitle">Победа!</h2>
         <p id="victorySubtitle"></p>
         <div id="postMatchStats" class="postMatchStats"></div>
+        <div id="postMatchSocial" class="postMatchSocial" hidden></div>
         <div class="dialogActions victoryActions">
           <button id="victoryMenu" type="button">Главное меню</button>
           <button id="victoryAgain" type="button">Начать новую игру</button>

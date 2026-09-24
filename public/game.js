@@ -59,6 +59,32 @@ const dice=[$("#d0"),$("#d1")];
 let gameMode="local";
 let botTimer=null;
 let botThinking=false;
+
+const BOT_BRAIN_KEY="partis-bot-brain-v1";
+const BOT_BRAIN_DEFAULT={home:1,capture:1,arrow:1,escape:1,safety:1,progress:1,games:0};
+function loadBotBrain(){
+ try{
+   const raw=JSON.parse(localStorage.getItem(BOT_BRAIN_KEY)||"null");
+   if(!raw)return {...BOT_BRAIN_DEFAULT};
+   const out={...BOT_BRAIN_DEFAULT};
+   for(const k of ["home","capture","arrow","escape","safety","progress"]){
+     const v=Number(raw[k]);if(Number.isFinite(v))out[k]=Math.max(.72,Math.min(1.38,v));
+   }
+   out.games=Math.max(0,Number(raw.games)||0);
+   return out;
+ }catch{return {...BOT_BRAIN_DEFAULT}}
+}
+let botBrain=loadBotBrain();
+function saveBotBrain(){try{localStorage.setItem(BOT_BRAIN_KEY,JSON.stringify(botBrain))}catch{}}
+function botStyleName(style){
+ const map={cautious:"Осторожный",aggressive:"Агрессивный",risky:"Рискованный",adaptive:"Адаптивный"};
+ return uiText(map[style]||"Адаптивный");
+}
+function botStyleFor(owner){
+ const pl=g?.players?.[owner];
+ return pl?.botStyle||"adaptive";
+}
+
 function isBotSeat(seat=g?.turn){
  return !!g && (!!g.botSeats?.includes(seat) || g.autoBotSeat===seat);
 }
@@ -195,6 +221,44 @@ function renderPostMatchStats(winnerSeat=null){
    vals.innerHTML=`<span>👣 <b>${s.moves||0}</b><small>${uiText("ходы")}</small></span><span>⛓️ <b>${s.captures||0}</b><small>${uiText("плен")}</small></span><span>🎲 <b>${s.kush||0}</b><small>${uiText("куши")}</small></span><span>🕳️ <b>${s.traps||0}</b><small>${uiText("ловушки")}</small></span><span>🧭 <b>${s.trapExits||0}</b><small>${uiText("выходы")}</small></span><span>🏠 <b>${s.home||0}</b><small>${uiText("Домик")}</small></span>`;
    card.appendChild(vals);grid.appendChild(card);
  });
+ box.appendChild(grid);
+}
+function renderPostMatchSocial(){
+ const box=$("#postMatchSocial");
+ if(!box)return;
+ box.replaceChildren();
+ const online=window.MondavoshkaOnline;
+ const profile=window.MondavoshkaProfile;
+ if(!online?.active||!Array.isArray(online.players)||!profile?.id){box.hidden=true;return}
+
+ const opponents=online.players.filter(p=>!p.bot&&p.profileId&&p.profileId!==profile.id);
+ if(!opponents.length){box.hidden=true;return}
+
+ box.hidden=false;
+ const h=document.createElement("h3");h.textContent=uiText("👥 Игроки этой партии");box.appendChild(h);
+ const grid=document.createElement("div");grid.className="postMatchFriendGrid";
+ for(const p of opponents){
+   const card=document.createElement("div");card.className="postMatchFriend";
+   const av=document.createElement("div");av.className="postFriendAvatar";
+   profile.paintAvatar?.(av,p.avatar||"animal:tiger","🐯");
+   const meta=document.createElement("div");meta.className="postFriendMeta";
+   const name=document.createElement("b");name.textContent=p.name||uiText("Игрок");
+   const rating=document.createElement("small");rating.textContent=`🏆 ${Number(p.rating)||0}`;
+   meta.append(name,rating);
+   const btn=document.createElement("button");btn.type="button";
+   const refresh=()=>{
+     const added=profile.isFriend?.(p.profileId);
+     btn.textContent=added?uiText("✓ В друзьях"):uiText("Добавить в друзья");
+     btn.disabled=!!added;
+   };
+   refresh();
+   btn.onclick=async()=>{
+     btn.disabled=true;
+     await profile.addFriend?.(p.profileId);
+     refresh();
+   };
+   card.append(av,meta,btn);grid.appendChild(card);
+ }
  box.appendChild(grid);
 }
 
@@ -492,6 +556,8 @@ function buildGameState(n,wish=selectedWish){
    lastPieceShown:Array(colorSet.length).fill(false),
    matchId:`m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,
    localResultReported:false,
+   botLearningTrace:{},
+   botBrainLearned:false,
 
    forfeit:wish
  };
@@ -525,10 +591,10 @@ function buildLocalMixedState(humanCount=4,fillBots=false,wish=selectedWish){
  const state=buildGameState(total,wish);
  const identities=[];
  for(let i=0;i<humans;i++)identities.push({name:`Игрок ${i+1}`,bot:false,skinId:i===0?(window.MondavoshkaProfile?.equippedSkin||"default"):"default",avatar:i===0?(window.MondavoshkaProfile?.avatar||"animal:tiger"):(["animal:lion","animal:wolf","animal:eagle"][i-1]||"animal:tiger")});
- for(let i=humans;i<total;i++)identities.push({name:`Компьютер ${i-humans+1}`,bot:true,skinId:"default",avatar:"animal:bear"});
+ for(let i=humans;i<total;i++)identities.push({name:`Компьютер ${i-humans+1}`,bot:true,botStyle:"adaptive",skinId:"default",avatar:"animal:bear"});
  const draw=shuffled(identities);
  state.botSeats=[];
- state.players.forEach((pl,seat)=>{const id=draw[seat];pl.playerName=id.name;pl.bot=id.bot;pl.skinId=id.skinId;pl.avatar=id.avatar;if(id.bot)state.botSeats.push(seat)});
+ state.players.forEach((pl,seat)=>{const id=draw[seat];pl.playerName=id.name;pl.bot=id.bot;pl.botStyle=id.botStyle||null;pl.skinId=id.skinId;pl.avatar=id.avatar;if(id.bot)state.botSeats.push(seat)});
  return state;
 }
 function newGame(n,wish=selectedWish,fillBots=false){
@@ -536,19 +602,28 @@ function newGame(n,wish=selectedWish,fillBots=false){
  const state=buildLocalMixedState(n,fillBots,wish);
  activateGameState(state,state.botSeats.length?"mixed":"local",`Жребий цветов проведён. Первым ходит ${playerLabel(state.players[0])}.`);
 }
-function buildBotGameState(botCount=1){
+function buildBotGameState(botCount=1,styleMode="mixed"){
  const count=Math.max(1,Math.min(3,Number(botCount)||1));
  const state=buildGameState(count+1,null);
  const identities=[{name:"Вы",bot:false,skinId:window.MondavoshkaProfile?.equippedSkin||"default",avatar:window.MondavoshkaProfile?.avatar||"animal:tiger"}];
- for(let i=0;i<count;i++)identities.push({name:`Компьютер ${i+1}`,bot:true,skinId:"default",avatar:"animal:bear"});
+ const cycle=["cautious","aggressive","risky","adaptive"];
+ for(let i=0;i<count;i++){
+   const style=styleMode==="mixed"?cycle[i%cycle.length]:(["cautious","aggressive","risky","adaptive"].includes(styleMode)?styleMode:"adaptive");
+   identities.push({name:`Компьютер ${i+1}`,bot:true,botStyle:style,skinId:"default",avatar:"animal:bear"});
+ }
  const draw=shuffled(identities);state.botSeats=[];
- state.players.forEach((pl,seat)=>{const id=draw[seat];pl.playerName=id.name;pl.bot=id.bot;pl.skinId=id.skinId;pl.avatar=id.avatar;if(id.bot)state.botSeats.push(seat)});
+ state.players.forEach((pl,seat)=>{
+   const id=draw[seat];
+   pl.playerName=id.name;pl.bot=id.bot;pl.botStyle=id.botStyle||null;pl.skinId=id.skinId;pl.avatar=id.avatar;
+   if(id.bot)state.botSeats.push(seat);
+ });
  return state;
 }
-function startBotGame(botCount=1){
+function startBotGame(botCount=1,styleMode="mixed"){
  cancelBotTimer();selectedWish=null;
- const state=buildBotGameState(botCount);
- activateGameState(state,"bot",`Жребий цветов проведён. Первым ходит ${playerLabel(state.players[0])}.`);
+ const state=buildBotGameState(botCount,styleMode);
+ const styles=state.players.filter(x=>x.bot).map(x=>botStyleName(x.botStyle)).join(", ");
+ activateGameState(state,"bot",`Жребий цветов проведён. Первым ходит ${playerLabel(state.players[0])}. Характеры ИИ: ${styles}.`);
  updatePenaltyCard();
 }
 function startOnlineGameState(state,statusText="Онлайн-партия началась."){
@@ -904,6 +979,79 @@ function canCaptureAt(idx,owner){
  if(!enemy)return true;
  return !CORNERS.has(idx)||isKush();
 }
+function ownPieceAt(idx,owner,except=null){
+ return g?.players?.[owner]?.pieces?.find(p=>p.id!==except&&p.state==="track"&&p.track===idx)||null;
+}
+function canPushHomeChain(owner,idx){
+ if(idx>4)return false;
+ const occ=homeOcc(owner,idx);
+ return !occ||canPushHomeChain(owner,idx+1);
+}
+function canPushOwnForward(pc,seen=new Set()){
+ if(!pc||pc.state!=="track"||seen.has(pc.id))return false;
+ seen.add(pc.id);
+ const pl=g.players[pc.owner];
+ if(pc.track===START[pl.id]&&pc.lapComplete===true)return canPushHomeChain(pc.owner,0);
+ const next=(pc.track-1+TRACK.length)%TRACK.length;
+ if(enemyAt(next,pc.owner))return false;
+ const own=ownPieceAt(next,pc.owner,pc.id);
+ return !own||canPushOwnForward(own,seen);
+}
+function canPushArrowOccupant(pc,jump){
+ if(!pc||!jump)return false;
+ const enemy=enemyAt(jump.to,pc.owner);
+ if(enemy&&!canCaptureAt(jump.to,pc.owner))return false;
+ const own=ownPieceAt(jump.to,pc.owner,pc.id);
+ return !own||canPushOwnForward(own);
+}
+async function pushHomeChain(owner,idx){
+ if(idx>4)return false;
+ const occ=homeOcc(owner,idx);
+ if(!occ)return true;
+ if(idx===4)return false;
+ if(!(await pushHomeChain(owner,idx+1)))return false;
+ await animate(occ,[HOME[g.players[owner].id][idx+1]],230,"walk");
+ occ.homeIndex=idx+1;
+ return true;
+}
+// ВАЖНО: этот helper нельзя использовать для обычного столкновения своих фишек.
+// Он применяется только для специальных диагональных стрелок.
+async function pushOwnForward(pc){
+ if(!pc||pc.state!=="track")return false;
+ const pl=g.players[pc.owner];
+
+ // Если вытолкнули фишку, уже завершившую круг и стоящую на своей БАЗЕ,
+ // толчок считается следующим шагом и заводит её в Домик.
+ if(pc.track===START[pl.id]&&pc.lapComplete===true){
+   if(!(await pushHomeChain(pc.owner,0)))return false;
+   await animate(pc,[HOME[pl.id][0]],260,"walk");
+   pc.state="home";pc.homeIndex=0;pc.track=null;
+   bumpStat(pc.owner,"home");
+   return true;
+ }
+
+ const next=(pc.track-1+TRACK.length)%TRACK.length;
+ const own=ownPieceAt(next,pc.owner,pc.id);
+ if(own&&!(await pushOwnForward(own)))return false;
+ if(enemyAt(next,pc.owner))return false;
+ await animate(pc,[TRACK[next]],250,"walk");
+ pc.track=next;
+ pc.progress=(Number(pc.progress)||0)+1;
+ if(next===START[pl.id])pc.lapComplete=true;
+ return true;
+}
+async function pushOwnThroughArrow(pc,jump){
+ if(!pc||!jump)return false;
+ const own=ownPieceAt(jump.to,pc.owner,pc.id);
+ if(own&&!(await pushOwnForward(own)))return false;
+ const enemy=enemyAt(jump.to,pc.owner);
+ if(enemy)await capture(enemy,g.players[pc.owner].id);
+ const start=TRACK[pc.track],end=TRACK[jump.to],control=[jump.cx,jump.cy];
+ sfxArrow();
+ await animateBezier(pc,start,control,end,650,"arrow");
+ pc.track=jump.to;
+ return true;
+}
 function canPushTrap(side,idx){
  const occ=trapOcc(side,idx);
  if(!occ)return true;
@@ -946,6 +1094,8 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
    if(next<3 && !canPushTrap(pc.trapSide,next))return null;
    if(next>=3){
      const exit=TRAP_META[pc.trapSide].exit;
+     // Выход из ловушки блокируется своей фишкой на клетке выхода.
+     // Никакого толчка на выходе из ловушки нет.
      if(ownAt(exit,pc.owner))return null;
      if(!canCaptureAt(exit,pc.owner))return null;
    }
@@ -1025,7 +1175,22 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
  }
 
  const dest=last.index;
- if(ownAt(dest,pc.owner))return null;
+ const jump=DIAG_MAP[dest];
+ const ownDest=ownPieceAt(dest,pc.owner,pc.id);
+
+ // Особое правило стрелок:
+ // если фишка приходит на вход стрелки, где уже стоит СВОЯ фишка,
+ // она не блокируется. Пришедшая фишка остаётся на входе, а стоявшая
+ // там фишка выталкивается по нарисованной стрелке.
+ if(ownDest){
+   if(!jump||!canPushArrowOccupant(ownDest,jump))return null;
+   return {
+     id:pc.id,path,homePath,route,routeCoords,dest,
+     jumpTo:null,pushArrowPieceId:ownDest.id,pushArrowTo:jump.to,pushArrowLabel:jump.label,
+     finalKind:"track",lapCompleteFinal:lapComplete
+   };
+ }
+
  if(!canCaptureAt(dest,pc.owner))return null;
 
  // В ловушку можно войти только если цепочка реально может протолкнуться.
@@ -1034,12 +1199,16 @@ function legal(pc,steps,sourceSum=g.sum,trapOnly=false){
    if(!canPushTrap(side,0))return null;
  }
 
- const jump=DIAG_MAP[dest];
  if(jump){
-   if(ownAt(jump.to,pc.owner))return null;
-   if(!canCaptureAt(jump.to,pc.owner))return null;
+   const landingOwn=ownPieceAt(jump.to,pc.owner,pc.id);
+   if(landingOwn&&!canPushOwnForward(landingOwn))return null;
+   if(!landingOwn&&!canCaptureAt(jump.to,pc.owner))return null;
  }
- return {id:pc.id,path,homePath,route,routeCoords,dest,jumpTo:jump?jump.to:null,finalKind:"track",lapCompleteFinal:lapComplete};
+ return {
+   id:pc.id,path,homePath,route,routeCoords,dest,jumpTo:jump?jump.to:null,
+   pushLandingOwn:jump?ownPieceAt(jump.to,pc.owner,pc.id)?.id||null:null,
+   finalKind:"track",lapCompleteFinal:lapComplete
+ };
 }
 
 function currentLegal(){
@@ -1239,6 +1408,8 @@ async function pieceClick(pc){
    renderPieces();
    if(mv.rescue) setStatus("Шестёрка выкупит пленника. Затем право одного хода на 6 получит игрок, у которого был пленник.");
    else if(mv.homeMove||mv.finalKind==="home") setStatus("Ход внутри Домика идёт по клеткам. Нажмите фишку ещё раз для подтверждения.");
+   else if(mv.pushArrowPieceId) setStatus("На входе стрелки стоит ваша фишка: новая фишка вытолкнет её по стрелке и сама останется на входной клетке.");
+   else if(mv.jumpTo!=null&&mv.pushLandingOwn) setStatus("На выходе стрелки стоит ваша фишка: она сдвинется на одну клетку вперёд, освобождая место.");
    else if(mv.jumpTo!=null) setStatus("После обычного хода фишка попадёт на стрелку и перейдёт на клетку назначения.");
    else if(TRAP_ENTRY.has(mv.dest)) setStatus("Конечная клетка ведёт в ловушку «говно».");
    else setStatus("Маршрут показан. Нажмите эту фишку ещё раз, чтобы подтвердить ход.");
@@ -1327,11 +1498,27 @@ async function execute(pc,mv){
      bumpStat(pc.owner,"home");showGameEvent("ДОМИК!","home","Фишка завершила полный круг");
      setStatus("Фишка завершила один круг и вошла на внутреннюю дорожку Домика.");
    }else{
-     const enemy=enemyAt(mv.dest,pc.owner);
-     if(enemy)await capture(enemy,player().id);
-     pc.track=mv.dest;
+     // Если конечная клетка — вход стрелки и там стояла своя фишка,
+     // двигаем именно стоявшую фишку по стрелке. Пришедшая остаётся на входе.
+     if(mv.pushArrowPieceId){
+       const pushed=g.players[pc.owner].pieces.find(x=>x.id===mv.pushArrowPieceId);
+       const jump=DIAG_MAP[mv.dest];
+       if(pushed&&jump){
+         await pushOwnThroughArrow(pushed,jump);
+         showGameEvent(window.partisT?.("event.push","ТОЛЧОК!")||"ТОЛЧОК!","push","Своя фишка вытолкнута по стрелке");
+       }
+       pc.track=mv.dest;
+       setStatus("Фишка заняла вход стрелки и вытолкнула стоявшую там свою фишку по переходу.");
+     }else{
+       const enemy=enemyAt(mv.dest,pc.owner);
+       if(enemy)await capture(enemy,player().id);
+       pc.track=mv.dest;
+     }
 
-     if(TRAP_ENTRY.has(pc.track)){
+     if(mv.pushArrowPieceId){
+       // Переход уже выполнила вытолкнутая фишка — пришедшая остаётся здесь.
+     }
+     else if(TRAP_ENTRY.has(pc.track)){
        const side=trapSideByEntry(pc.track);
        const entry=pc.track;
        const ok=await pushTrapFrom(side,0);
@@ -1353,6 +1540,16 @@ async function execute(pc,mv){
      else if(DIAG_MAP[pc.track]){
        const jump=DIAG_MAP[pc.track];
        const entry=pc.track;
+
+       // Если на выходе стрелки стоит своя фишка, она сдвигается на один
+       // обычный шаг вперёд. Это освобождает клетку для прилетающей фишки.
+       const landingOwn=ownPieceAt(jump.to,pc.owner,pc.id);
+       if(landingOwn){
+         await pushOwnForward(landingOwn);
+         renderPieces();
+         showGameEvent(window.partisT?.("event.push","ТОЛЧОК!")||"ТОЛЧОК!","push","Своя фишка освобождает выход стрелки");
+       }
+
        // Сбрасываем предыдущую анимацию хода: новая SVG-фишка реально стоит
        // на клетке стрелки, поэтому полёт начинается строго с неё.
        renderPieces();
@@ -1432,43 +1629,139 @@ function trapCurveControl(side,start,end){
  return[Math.min(start[0],end[0])-18,my];
 }
 
+function botThreatCount(index,owner){
+ if(!Number.isInteger(index))return 0;
+ let risk=0;
+ for(const pl of g.players){
+   if(pl.owner===owner||pl.eliminated)continue;
+   for(const p of pl.pieces){
+     if(p.state!=="track"||!Number.isInteger(p.track))continue;
+     const dist=(p.track-index+TRACK.length)%TRACK.length;
+     if(dist>=1&&dist<=6)risk++;
+   }
+ }
+ return risk;
+}
+
+function botMoveFeatures(pc,mv){
+ const landing=Number.isInteger(mv.jumpTo)?mv.jumpTo:(Number.isInteger(mv.dest)?mv.dest:null);
+ const capture=(Number.isInteger(mv.dest)&&!!enemyAt(mv.dest,pc.owner)?1:0)
+   +(Number.isInteger(mv.jumpTo)&&!!enemyAt(mv.jumpTo,pc.owner)?1:0);
+ return {
+   home:(mv.finalKind==="home"||mv.homeMove)?1:0,
+   capture,
+   arrow:(Number.isInteger(mv.jumpTo)||!!mv.pushArrowPieceId||!!mv.pushLandingOwn)?1:0,
+   escape:pc.state==="trap"?1:0,
+   safety:landing==null?1:Math.max(0,3-botThreatCount(landing,pc.owner)),
+   progress:Math.max(1,(mv.path?.length||0)+(mv.homePath?.length||0))
+ };
+}
+
 function botMoveScore(pc,mv,steps){
+ const style=botStyleFor(pc.owner);
+ const f=botMoveFeatures(pc,mv);
  let score=0;
 
- // Главный приоритет — закончить круг и продвигаться внутри Домика.
- if(mv.finalKind==="home")score+=150+(Number(mv.destHome)||0)*18;
- if(mv.homeMove)score+=125+(Number(mv.destHome)||0)*18;
- if(Number(mv.destHome)===4)score+=130;
-
- // В ловушке компьютер старается выбраться как можно быстрее.
- if(pc.state==="trap")score+=95+(Number(pc.trap)||0)*22;
-
- // Вывести новую фишку полезно, но не ценнее взятия/домика.
- if(pc.state==="yard")score+=42;
-
- // Выкуп пленника полезен, но учитываем, что шестёрка передастся captor'у.
- if(mv.rescue)score+=38;
+ // Базовый здравый смысл — действует для всех характеров.
+ if(mv.finalKind==="home")score+=155+(Number(mv.destHome)||0)*20;
+ if(mv.homeMove)score+=128+(Number(mv.destHome)||0)*18;
+ if(Number(mv.destHome)===4)score+=135;
+ if(pc.state==="trap")score+=100+(Number(pc.trap)||0)*24;
+ if(pc.state==="yard")score+=44;
+ if(mv.rescue)score+=40;
 
  const directDest=Number.isInteger(mv.dest)?mv.dest:null;
  if(directDest!=null){
    const victim=enemyAt(directDest,pc.owner);
-   if(victim)score+=145;
-   if(CORNERS.has(directDest))score+=18;
-   if(TRAP_ENTRY.has(directDest))score-=45;
+   if(victim)score+=150;
+   if(CORNERS.has(directDest))score+=20;
+   if(TRAP_ENTRY.has(directDest))score-=46;
  }
  if(Number.isInteger(mv.jumpTo)){
    const victim2=enemyAt(mv.jumpTo,pc.owner);
-   if(victim2)score+=125;
-   score+=30;
-   if(CORNERS.has(mv.jumpTo))score+=15;
+   if(victim2)score+=130;
+   score+=34;
+   if(CORNERS.has(mv.jumpTo))score+=16;
  }
+ if(mv.pushArrowPieceId)score+=72;      // выгодно: одна фишка толкает вторую по стрелке
+ if(mv.pushLandingOwn)score+=46;        // освобождаем место на выходе стрелки
 
- score+=(mv.path?.length||0)*4;
+ score+=(mv.path?.length||0)*4.2;
  score+=(mv.homePath?.length||0)*10;
 
- // Небольшая вариативность при равноценных ходах.
- score+=Math.random()*2.5;
+ const landing=Number.isInteger(mv.jumpTo)?mv.jumpTo:directDest;
+ const risk=landing==null?0:botThreatCount(landing,pc.owner);
+
+ if(style==="cautious"){
+   score+=f.home*72+f.escape*45+f.safety*20;
+   score+=f.capture*32;
+   score-=risk*34;
+   if(directDest!=null&&CORNERS.has(directDest))score+=28;
+   if(directDest!=null&&TRAP_ENTRY.has(directDest))score-=38;
+ }
+ else if(style==="aggressive"){
+   score+=f.capture*105+f.arrow*28+f.progress*2;
+   score-=risk*8;
+   if(mv.rescue)score-=8;
+ }
+ else if(style==="risky"){
+   score+=f.arrow*82+f.capture*60+f.progress*5;
+   score-=risk*3;
+   if(directDest!=null&&TRAP_ENTRY.has(directDest))score+=18;
+   score+=Math.random()*22;
+ }
+ else{ // adaptive
+   score+=f.home*58*botBrain.home;
+   score+=f.capture*78*botBrain.capture;
+   score+=f.arrow*46*botBrain.arrow;
+   score+=f.escape*55*botBrain.escape;
+   score+=f.safety*14*botBrain.safety;
+   score+=f.progress*3.8*botBrain.progress;
+   score-=risk*15*botBrain.safety;
+ }
+
+ // Небольшая вариативность, чтобы одинаковые позиции не игрались механически.
+ score+=Math.random()*(style==="risky"?7:2.8);
  return score;
+}
+
+function recordAdaptiveBotChoice(choice){
+ if(!g||!choice||botStyleFor(choice.pc.owner)!=="adaptive")return;
+ const f=botMoveFeatures(choice.pc,choice.mv);
+ g.botLearningTrace=g.botLearningTrace&&typeof g.botLearningTrace==="object"?g.botLearningTrace:{};
+ const key=String(choice.pc.owner);
+ const t=g.botLearningTrace[key]||{home:0,capture:0,arrow:0,escape:0,safety:0,progress:0,moves:0};
+ for(const k of ["home","capture","arrow","escape","safety","progress"])t[k]+=Number(f[k])||0;
+ t.moves++;
+ g.botLearningTrace[key]=t;
+}
+
+function learnAdaptiveBotsFromMatch(winnerSeat){
+ if(!g||g.botBrainLearned)return;
+ g.botBrainLearned=true;
+ const traces=g.botLearningTrace||{};
+ let touched=false;
+ for(const seat of g.botSeats||[]){
+   if(botStyleFor(seat)!=="adaptive")continue;
+   const t=traces[String(seat)];
+   if(!t||!t.moves)continue;
+   const won=seat===winnerSeat;
+   if(won){
+     const scale=.018;
+     for(const k of ["home","capture","arrow","escape","safety","progress"]){
+       const avg=(Number(t[k])||0)/Math.max(1,t.moves);
+       botBrain[k]=Math.max(.72,Math.min(1.38,(Number(botBrain[k])||1)+scale*Math.min(2.2,avg)));
+     }
+   }else{
+     // После поражения не "учим" бота плохому: лишь немного возвращаем
+     // слишком сильные перекосы к нейтральным значениям.
+     for(const k of ["home","capture","arrow","escape","safety","progress"]){
+       botBrain[k]=1+(Math.max(.72,Math.min(1.38,Number(botBrain[k])||1))-1)*.985;
+     }
+   }
+   touched=true;
+ }
+ if(touched){botBrain.games=(Number(botBrain.games)||0)+1;saveBotBrain()}
 }
 
 function botCandidatesForDie(i){
@@ -1530,8 +1823,10 @@ function scheduleBotMove(delay=620){
      return;
    }
 
+   recordAdaptiveBotChoice(choice);
    botThinking=true;
-   setStatus(g.autoBotSeat===g.turn ? `Система делает ход за ${playerLabel(player())}: ${stepsNow()}…` : `Компьютер (${player().name}) ходит на ${stepsNow()}…`);
+   const styleLabel=player()?.bot?` · ${botStyleName(player().botStyle)}`:"";
+   setStatus(g.autoBotSeat===g.turn ? `Система делает ход за ${playerLabel(player())}: ${stepsNow()}…` : `Компьютер (${player().name}${styleLabel}) ходит на ${stepsNow()}…`);
    await new Promise(r=>setTimeout(r,420));
 
    if(!isBotTurn()||g.selected==null){
@@ -2118,7 +2413,9 @@ function showVictory(seat,statusText=""){
  }
  if(title)title.textContent=uiText(`${pl.playerName||"Игрок"} победил!`);
  if(sub)sub.textContent=uiText(`Победные фишки: ${pl.name}. Все 5 фишек в Домике.${comeback?" 🔄 Камбэк!":""}`)+(statusText?` ${uiText(statusText)}`:"");
- renderPostMatchStats(seat);checkLocalAchievements(seat);
+ renderPostMatchStats(seat);renderPostMatchSocial();
+ learnAdaptiveBotsFromMatch(seat);
+ checkLocalAchievements(seat);
  if(gameMode==="bot"&&!g.localResultReported){
    g.localResultReported=true;
    const localSeat=localProfileSeat();
@@ -2131,6 +2428,8 @@ function showMatchEnded(statusText="Партия завершена."){
  if(title)title.textContent=uiText("Партия завершена");
  if(sub)sub.textContent=uiText(statusText);
  renderPostMatchStats(null);
+ renderPostMatchSocial();
+ learnAdaptiveBotsFromMatch(null);
  modal?.classList.add("show");
  startFireworks();
 }
@@ -2163,14 +2462,16 @@ const TUTORIAL_STEPS=[
  {icon:"🚪",title:"Выход из Базы",text:"Чтобы вывести новую фишку из Базы на внешнюю дорожку, нужна отдельная шестёрка. Цель — провести каждую фишку ровно один полный круг."},
  {icon:"🏠",title:"Домик",text:"После полного круга фишка возвращается на свою клетку БАЗА. Следующий шаг уже ведёт внутрь Домика. Побеждает тот, кто первым заведёт туда все 5 фишек."},
  {icon:"⛓️",title:"Плен и ловушка",text:"Попав на клетку соперника, вы берёте его фишку в плен. В ловушке движение идёт по значениям 1 → 3 → 6. Для выкупа пленника нужна шестёрка."},
- {icon:"🔥",title:"Три куша",text:"Если один игрок выбросил три куша подряд, до розыгрыша третьего куша он выбирает одну допустимую фишку и сразу отправляет её в Домик. Пятую фишку так поставить нельзя."}
+ {icon:"🔥",title:"Три куша",text:"Если один игрок выбросил три куша подряд, до розыгрыша третьего куша он выбирает одну допустимую фишку и сразу отправляет её в Домик. Пятую фишку так поставить нельзя."},
+ {icon:"↗️",title:"Толчок на стрелке",text:"Если вы приходите на вход стрелки, где уже стоит ваша фишка, новая фишка остаётся на входной клетке, а стоявшая там фишка выталкивается по стрелке. Если своя фишка стоит на выходе стрелки, она сдвигается на одну клетку вперёд и освобождает место."}
 ];
 const TUTORIAL_STEPS_SAH=[
  {icon:"🎲",title:"Кубиктар",text:"Икки кубик быраҕыллар. Хаамыы кубик ахсын тус-туспа оҥоһуллар: бастатан улахан, онтон кыра. Биир эмэ суолталаах икки биир чыыһыла — куш — эбии быраҕыыны биэрэр."},
  {icon:"🚪",title:"Баазаттан тахсыы",text:"Саҥа фишканы Баазаттан таһаарыахха туспа 6 наада. Сыал — хас фишка ахсын биир толору эргийиини ааһарыы."},
  {icon:"🏠",title:"Дьиэ",text:"Толору эргийии кэнниттэн фишка бэйэтин БААЗА клеткатыгар төннөр. Онтон анаан ис суолга — Дьиэҕэ — киирэр. Бары 5 фишкатын бастакы киллэрбит оонньооччу кыайар."},
  {icon:"⛓️",title:"Тутуу уонна хапсаҕай",text:"Атын оонньооччу клеткатыгар түбэһэн, кини фишкатын тутуоххутун сөп. Хапсаҕай иһигэр 1 → 3 → 6 чыыһылаларынан хаамыллар."},
- {icon:"🔥",title:"Үс куш",text:"Биир оонньооччу үс кушу субуруччу бырахтаҕына, үһүс куш иннинэ биир сөптөөх фишканы талан Дьиэҕэ туруорар. Тиһэх, бэһис фишканы бу бонуска киллэрэр кыаллыбат."}
+ {icon:"🔥",title:"Үс куш",text:"Биир оонньооччу үс кушу субуруччу бырахтаҕына, үһүс куш иннинэ биир сөптөөх фишканы талан Дьиэҕэ туруорар. Тиһэх, бэһис фишканы бу бонуска киллэрэр кыаллыбат."},
+ {icon:"↗️",title:"Стрелкаҕа итиһии",text:"Стрелка киириитигэр бэйэҕит фишкатын турарыгар атын фишкаҕыт кэллэҕинэ, кэлбит фишка клеткаҕа хаалар, онно турбут фишка стрелканан көһөр. Стрелка тахсыытыгар бэйэ фишката турар буоллаҕына, ол биир клетка инники көһөн миэстэни босхолор."}
 ];
 let tutorialIndex=0;
 function renderTutorial(){const steps=TUTORIAL_STEPS;const s=steps[tutorialIndex];if(!s)return;$("#tutorialIcon").textContent=s.icon;$("#tutorialTitle").textContent=uiText(s.title);$("#tutorialText").textContent=uiText(s.text);$("#tutorialStepLabel").textContent=`${tutorialIndex+1} / ${steps.length}`;const dots=$("#tutorialDots");dots.replaceChildren();steps.forEach((_,i)=>{const b=document.createElement("i");if(i===tutorialIndex)b.className="active";dots.appendChild(b)});$("#tutorialPrev").disabled=tutorialIndex===0;$("#tutorialNext").textContent=tutorialIndex===steps.length-1?uiText("Понятно ✓"):uiText("Далее →")}
@@ -2195,7 +2496,7 @@ $("#playBot").onclick=()=>{
 };
 $("#startBot").onclick=()=>{
   closeGameMenus();
-  startBotGame(Number($("#botCount").value)||1);
+  startBotGame(Number($("#botCount").value)||1,$("#botPersonality")?.value||"mixed");
 };
 $("#createOnline").onclick=()=>{
   closeGameMenus();

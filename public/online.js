@@ -264,6 +264,7 @@
      else hint.textContent=uiText("Ждём, пока создатель комнаты начнёт игру.");
    }
    setConnection(S.connected?"Связь с сервером установлена":"Нет связи с сервером",S.connected);
+   window.MondavoshkaProfile?.renderLobbyFriends?.();
  } function controlsSeat(seat){
    if(S.seat===seat)return true;
    if(S.autoSeat===seat && S.autoControllerSeat===S.seat)return true;
@@ -363,6 +364,18 @@
    if(code.length!==6){setErr("#joinOnlineError","Введите 6-значный код комнаты.");return}
    try{await connect();send({type:"join_room",code,name:S.name,...profilePayload()})}
    catch(e){setErr("#joinOnlineError",`${e.message}. Проверьте адрес онлайн-сервера.`)}
+ }
+ async function joinInvite(code){
+   const normalized=normalizeCode(code);
+   if(normalized.length!==6)return false;
+   if(S.active)leave(false);
+   closeGameMenus();
+   const name=document.querySelector("#joinPlayerName"),input=document.querySelector("#roomCode");
+   if(name&&!name.value)name.value=window.MondavoshkaProfile?.name==="Игрок"?"":window.MondavoshkaProfile?.name||"";
+   if(input)input.value=normalized;
+   document.querySelector("#onlineJoinModal")?.classList.add("show");
+   await joinRoom();
+   return true;
  }
  function setRandomStatus(text,searching=null){
    const el=document.querySelector("#randomStatus");if(el)el.textContent=uiText(text||"");
@@ -516,6 +529,7 @@
      applyTimer(m);S.actionSeat=null;
      const roll=document.querySelector("#roll");if(roll)roll.disabled=true;
      window.MondavoshkaProfile?.loadLeaderboard?.();
+     window.MondavoshkaProfile?.loadSocial?.();
      if(Number.isInteger(m.winnerSeat)){
        setTimeout(()=>window.MondavoshkaVictory?.show?.(m.winnerSeat,m.status||""),250);
      }else{
@@ -600,7 +614,7 @@
  }
  window.addEventListener("partis-language-changed",()=>{try{renderLocalized()}catch(e){}});
  window.MondavoshkaOnline={
-   get active(){return S.active},get connected(){return S.connected},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get misses(){return S.misses},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
-   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,sendChat,resumeSavedGame,wsUrl,playerTextBySeat,renderLocalized
+   get active(){return S.active},get connected(){return S.connected},get started(){return S.started},get roomCode(){return S.code},get seat(){return S.seat},get name(){return S.name},get players(){return S.players},get misses(){return S.misses},get pendingStart(){return S.pendingStart},set pendingStart(v){S.pendingStart=!!v},
+   canAct,isBotController,refreshControls,requestRoll,syncState,afterNetworkRollApplied,startGame,leave,forfeitAndLeave,sendChat,resumeSavedGame,joinInvite,wsUrl,playerTextBySeat,renderLocalized
  };
 })();
