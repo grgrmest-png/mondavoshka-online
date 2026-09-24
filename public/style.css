@@ -1435,3 +1435,34 @@ body[data-dice-skin="dice_ruby"] .die{background:linear-gradient(145deg,#ff8791,
     grid-template-columns:1fr;
   }
 }
+
+
+/* ==========================================================
+   PARTIS V60 — performance pass
+   ========================================================== */
+#board .piece{
+  transform-box:fill-box;
+  transform-origin:center;
+  will-change:transform;
+}
+#turnTimerBar{
+  transition:width .5s linear;
+}
+.boardbox{
+  contain:layout paint;
+}
+.gameEvent{
+  will-change:transform,opacity;
+}
+@media(max-width:800px){
+  /* На телефоне уменьшаем дорогие декоративные тени, не меняя механику. */
+  .boardbox{
+    box-shadow:0 4px 12px #0005!important;
+  }
+  .seatBadge{
+    box-shadow:0 2px 5px #0005!important;
+  }
+  .gameEvent{
+    filter:none!important;
+  }
+}

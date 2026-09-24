@@ -397,6 +397,7 @@ function installMobileBoardTapAssist(){
 }
 
 function drawBoard(){
+ seatBadgeRenderKey="";
  svg.innerHTML="";
  const T=currentTableTheme();
  const defs=E("defs");
@@ -495,7 +496,6 @@ function drawBoard(){
  thin.forEach(a=>E("line",{x1:a.x1,y1:a.y1,x2:a.x2,y2:a.y2,stroke:"#55341d","stroke-width":4,"marker-end":"url(#thinArrow)","stroke-linecap":"round"}));
 
  renderPieces();
- renderSeatBadges();
 }function player(){return g.players[g.turn]}
 function playerLabel(pl){
  if(!pl)return "Игрок";
@@ -509,25 +509,69 @@ function seatBadgeId(colorId){
         colorId==="red"?"#seatBadgeBottom":
         "#seatBadgeLeft";
 }
-function renderSeatBadges(){
+let seatBadgeRenderKey="";
+function renderSeatBadges(force=false){
+ if(!g?.players?.length){
+   seatBadgeRenderKey="";
+   ["#seatBadgeTop","#seatBadgeRight","#seatBadgeBottom","#seatBadgeLeft"].forEach(id=>{
+     const e=$(id);if(e)e.hidden=true;
+   });
+   return;
+ }
+
+ const online=onlineActive();
+ const onlineSeat=online?window.MondavoshkaOnline?.seat:null;
+ const lang=window.PartisI18n?.language||"ru";
+ const remotes=online?(window.MondavoshkaOnline?.players||[]):[];
+ const misses=online?(window.MondavoshkaOnline?.misses||[]):[];
+
+ // Дешёвый ключ состояния. Если ничего не поменялось — вообще не трогаем DOM.
+ const key=JSON.stringify([
+   lang,online,onlineSeat,
+   g.players.map(pl=>{
+     const r=remotes.find(x=>x.seat===pl.owner);
+     return [pl.id,pl.owner,pl.playerName||"",pl.name,pl.bot?1:0,pl.avatar||"",r?.name||"",r?.avatar||"",Number(misses[pl.owner])||0];
+   })
+ ]);
+ if(!force&&key===seatBadgeRenderKey)return;
+ seatBadgeRenderKey=key;
+
  const ids=["#seatBadgeTop","#seatBadgeRight","#seatBadgeBottom","#seatBadgeLeft"];
  ids.forEach(id=>{const e=$(id);if(e){e.hidden=true;e.replaceChildren();e.removeAttribute("title")}});
- if(!g?.players?.length)return;
- const onlineSeat=onlineActive()?window.MondavoshkaOnline?.seat:null;
+
  for(const pl of g.players){
    const el=$(seatBadgeId(pl.id));if(!el)continue;
-   const remote=onlineActive()?window.MondavoshkaOnline?.players?.find?.(x=>x.seat===pl.owner):null;
+   const remote=online?remotes.find(x=>x.seat===pl.owner):null;
    const isMe=(Number.isInteger(onlineSeat)&&onlineSeat===pl.owner)||pl.playerName==="Вы";
-   el.hidden=false;el.className=`seatBadge ${seatBadgeId(pl.id).slice(1)} seatRing-${pl.id}`+(isMe?" isMe":"");
+   el.hidden=false;
+   el.className=`seatBadge ${seatBadgeId(pl.id).slice(1)} seatRing-${pl.id}`+(isMe?" isMe":"");
    el.title=`${pl.playerName||remote?.name||uiText("Игрок")} — ${uiText(pl.name)}`;
-   const avatar=document.createElement("div");avatar.className="seatAvatar";
-   window.MondavoshkaProfile?.paintAvatar?.(avatar,remote?.avatar||pl.avatar||(pl.bot?"animal:bear":"animal:tiger"),pl.bot?"🤖":"🐯");
-   if(pl.bot&&!remote){avatar.replaceChildren();const s=document.createElement("span");s.textContent="🤖";avatar.appendChild(s)}
+
+   const avatar=document.createElement("div");
+   avatar.className="seatAvatar";
+   window.MondavoshkaProfile?.paintAvatar?.(
+     avatar,
+     remote?.avatar||pl.avatar||(pl.bot?"animal:bear":"animal:tiger"),
+     pl.bot?"🤖":"🐯"
+   );
+   if(pl.bot&&!remote){
+     avatar.replaceChildren();
+     const s=document.createElement("span");s.textContent="🤖";avatar.appendChild(s);
+   }
    el.appendChild(avatar);
-   if(isMe){const you=document.createElement("b");you.className="seatYou";you.textContent=uiText("ВЫ");el.appendChild(you)}
-   if(onlineActive()){
-     const misses=Number(window.MondavoshkaOnline?.misses?.[pl.owner])||0;
-     const dots=document.createElement("div");dots.className="seatMissDots";for(let i=0;i<3;i++){const d=document.createElement("i");if(i<misses)d.className="used";dots.appendChild(d)}el.appendChild(dots)
+
+   if(isMe){
+     const you=document.createElement("b");you.className="seatYou";you.textContent=uiText("ВЫ");el.appendChild(you);
+   }
+   if(online){
+     const missCount=Number(misses[pl.owner])||0;
+     const dots=document.createElement("div");dots.className="seatMissDots";
+     for(let i=0;i<3;i++){
+       const d=document.createElement("i");
+       if(i<missCount)d.className="used";
+       dots.appendChild(d);
+     }
+     el.appendChild(dots);
    }
  }
 }
@@ -743,7 +787,7 @@ function renderPieces(){
   const skin=pieceSkin(pl);
   const grad = pl.id==="red"?"url(#redPiece)":pl.id==="blue"?"url(#bluePiece)":pl.id==="black"?"url(#blackPiece)":"url(#whitePiece)";
   const fill=skin.color||grad;
-  E("circle",{cx:p[0],cy:p[1],r:21,fill,stroke:pc.state==="captured"?"#9b5b20":seatStroke(pl.id),"stroke-width":pc.state==="captured"?5:4,filter:"url(#pieceShadow)"},grp);
+  E("circle",{cx:p[0],cy:p[1],r:21,fill,stroke:pc.state==="captured"?"#9b5b20":seatStroke(pl.id),"stroke-width":pc.state==="captured"?5:4},grp);
   if(skin.stripe){
     E("path",{d:`M${p[0]-15} ${p[1]-9} H${p[0]+15} M${p[0]-15} ${p[1]+2} H${p[0]+15}`,stroke:skin.stripe,"stroke-width":5,opacity:.9},grp);
   }

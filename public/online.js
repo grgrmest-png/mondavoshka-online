@@ -315,7 +315,7 @@
    }
    const mp=document.querySelector("#matchPoints");if(mp)mp.textContent=String(S.matchPoints[S.seat]||0);
  }
- setInterval(()=>{renderTurnTimer();renderConnectionNotice()},250);
+ setInterval(()=>{renderTurnTimer();renderConnectionNotice()},500);
  function applyTimer(m){
    if(Object.prototype.hasOwnProperty.call(m,"deadline"))S.deadline=Number(m.deadline)||0;
    if(Object.prototype.hasOwnProperty.call(m,"timerEnabled"))S.timerEnabled=m.timerEnabled!==false;

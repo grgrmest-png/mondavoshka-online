@@ -105,7 +105,14 @@
  async function waitSdk(ms=3500){const start=Date.now();while(Date.now()-start<ms){if(window.ysdk)return window.ysdk;await new Promise(r=>setTimeout(r,100))}return null}
  async function api(path,opts={}){const res=await fetch(serverBase()+path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})}});if(!res.ok){let msg=await res.text();try{msg=JSON.parse(msg).error||msg}catch{}throw new Error(msg||`HTTP ${res.status}`)}return res.json()}
  async function syncServer(){try{const p=await api("/api/sync-profile",{method:"POST",body:JSON.stringify(snapshot())});applyServerProfile(p.profile||p,false)}catch(e){console.warn("Profile sync failed",e)}}
- function applyServerProfile(p,persist=true){if(!p)return;if(p.friendCode)S.friendCode=String(p.friendCode);S.rating=Math.max(0,+p.rating||0);S.balance=Math.max(0,+p.balance||0);S.wins=Math.max(0,+p.wins||0);S.games=Math.max(0,+p.games||0);S.winStreak=Math.max(0,+p.winStreak||0);S.bestWinStreak=Math.max(S.winStreak,+p.bestWinStreak||0);if(p.daily)S.daily=p.daily;if(Array.isArray(p.owned))S.owned=[...new Set(["default",...p.owned])];if(p.equipped)S.equipped=p.equipped;if(p.name)S.name=String(p.name).slice(0,24);if(p.avatar)S.avatar=p.avatar;if(Array.isArray(p.ownedTables))S.ownedTables=[...new Set(["table_classic",...p.ownedTables])];if(p.equippedTable)S.equippedTable=p.equippedTable;if(Array.isArray(p.ownedDice))S.ownedDice=[...new Set(["dice_ivory",...p.ownedDice])];if(p.equippedDice)S.equippedDice=p.equippedDice;if(Array.isArray(p.achievements))S.achievements=[...new Set(p.achievements)];saveFallback();renderProfile();renderShop();renderProfileModal();renderDaily();applyCosmetics();if(persist)persistYandex();setTimeout(checkProfileAchievements,0)}
+ function applyServerProfile(p,persist=true){if(!p)return;if(p.friendCode)S.friendCode=String(p.friendCode);S.rating=Math.max(0,+p.rating||0);S.balance=Math.max(0,+p.balance||0);S.wins=Math.max(0,+p.wins||0);S.games=Math.max(0,+p.games||0);S.winStreak=Math.max(0,+p.winStreak||0);S.bestWinStreak=Math.max(S.winStreak,+p.bestWinStreak||0);if(p.daily)S.daily=p.daily;if(Array.isArray(p.owned))S.owned=[...new Set(["default",...p.owned])];if(p.equipped)S.equipped=p.equipped;if(p.name)S.name=String(p.name).slice(0,24);if(p.avatar)S.avatar=p.avatar;if(Array.isArray(p.ownedTables))S.ownedTables=[...new Set(["table_classic",...p.ownedTables])];if(p.equippedTable)S.equippedTable=p.equippedTable;if(Array.isArray(p.ownedDice))S.ownedDice=[...new Set(["dice_ivory",...p.ownedDice])];if(p.equippedDice)S.equippedDice=p.equippedDice;if(Array.isArray(p.achievements))S.achievements=[...new Set(p.achievements)];saveFallback();
+   renderProfile();
+   if(document.querySelector("#shopModal")?.classList.contains("show"))renderShop();
+   if(document.querySelector("#profileModal")?.classList.contains("show"))renderProfileModal();
+   if(document.querySelector("#dailyModal")?.classList.contains("show"))renderDaily();
+   applyCosmetics();
+   if(persist)persistYandex();
+   setTimeout(checkProfileAchievements,0)}
  async function persistYandex(){if(!S.player)return;try{await S.player.setStats({rating:S.rating,pointsBalance:S.balance,wins:S.wins,games:S.games})}catch{}try{await S.player.setData({ownedSkins:S.owned,equippedSkin:S.equipped,partisAvatar:S.avatar,partisOwnedTables:S.ownedTables,partisTable:S.equippedTable,partisOwnedDice:S.ownedDice,partisDice:S.equippedDice,partisAchievements:S.achievements,partisWinStreak:S.winStreak,partisBestWinStreak:S.bestWinStreak},true)}catch{}if(S.authorized&&window.ysdk?.leaderboards){clearTimeout(leaderboardDebounce);leaderboardDebounce=setTimeout(async()=>{try{const ok=await window.ysdk.isAvailableMethod?.("leaderboards.setScore");if(ok!==false)await window.ysdk.leaderboards.setScore("rating",S.rating)}catch{}},1200)}}
  async function initPlayer(){loadFallback();S.id=fallbackId();const ysdk=await waitSdk();if(ysdk){try{const p=await ysdk.getPlayer();S.player=p;S.id=cleanId(p.getUniqueID?.()||S.id)||S.id;S.authorized=!!p.isAuthorized?.();const nm=String(p.getName?.()||"").trim();if(S.authorized&&nm&&nm!=="unauthorized")S.name=nm.slice(0,24);try{const stats=await p.getStats(["rating","pointsBalance","wins","games"]);S.rating=Math.max(S.rating,+stats.rating||0);S.balance=Math.max(S.balance,+stats.pointsBalance||0);S.wins=Math.max(S.wins,+stats.wins||0);S.games=Math.max(S.games,+stats.games||0)}catch{}try{const data=await p.getData(["ownedSkins","equippedSkin","partisAvatar","partisOwnedTables","partisTable","partisOwnedDice","partisDice","partisAchievements","partisWinStreak","partisBestWinStreak"]);if(Array.isArray(data.ownedSkins))S.owned=[...new Set(["default",...data.ownedSkins])];if(data.equippedSkin)S.equipped=data.equippedSkin;if(data.partisAvatar)S.avatar=data.partisAvatar;if(Array.isArray(data.partisOwnedTables))S.ownedTables=[...new Set(["table_classic",...data.partisOwnedTables])];if(data.partisTable)S.equippedTable=data.partisTable;if(Array.isArray(data.partisOwnedDice))S.ownedDice=[...new Set(["dice_ivory",...data.partisOwnedDice])];if(data.partisDice)S.equippedDice=data.partisDice;if(Array.isArray(data.partisAchievements))S.achievements=[...new Set(data.partisAchievements)];if(data.partisWinStreak!=null)S.winStreak=Math.max(S.winStreak,+data.partisWinStreak||0);if(data.partisBestWinStreak!=null)S.bestWinStreak=Math.max(S.bestWinStreak,+data.partisBestWinStreak||0)}catch{}}catch(e){console.warn("Yandex player unavailable",e)}}await syncServer();await claimStoredAchievementRewards();renderProfile();renderShop();renderProfileModal();renderDaily();loadDaily();loadLeaderboard();await loadSocial();startInvitePolling();initPayments();prefillNames();applyCosmetics();checkProfileAchievements()}
  function publicProfile(){return {id:S.id,name:S.name,skinId:S.equipped,rating:S.rating,avatar:S.avatar}}
@@ -114,7 +121,22 @@
  function tableVisual(id=S.equippedTable){return TABLE_VISUALS[id]||TABLE_VISUALS.table_classic}
  function diceVisual(id=S.equippedDice){return DICE.find(x=>x.id===id)||DICE[0]}
  function avatarInfo(value=S.avatar){const a=AVATARS.find(x=>x.id===value);if(a)return {type:"emoji",value:a.emoji,name:a.name};if(/^data:image\/(jpeg|png|webp);base64,/i.test(String(value||"")))return {type:"image",value:String(value),name:"Фото"};return {type:"emoji",value:"🐯",name:"Тигр"}}
- function paintAvatar(el,value=S.avatar,fallback="🐯"){if(!el)return;el.replaceChildren();el.style.backgroundImage="";const a=avatarInfo(value);if(a.type==="image"){el.style.backgroundImage=`url(${a.value})`;el.classList.add("hasPhoto")}else{el.classList.remove("hasPhoto");const s=document.createElement("span");s.textContent=a.value||fallback;el.appendChild(s)}}
+ function paintAvatar(el,value=S.avatar,fallback="🐯"){
+ if(!el)return;
+ const a=avatarInfo(value);
+ const key=`${a.type}:${a.value||fallback}`;
+ if(el.dataset.avatarRenderKey===key)return;
+ el.dataset.avatarRenderKey=key;
+ el.replaceChildren();
+ el.style.backgroundImage="";
+ if(a.type==="image"){
+   el.style.backgroundImage=`url(${a.value})`;
+   el.classList.add("hasPhoto");
+ }else{
+   el.classList.remove("hasPhoto");
+   const s=document.createElement("span");s.textContent=a.value||fallback;el.appendChild(s);
+ }
+}
  function renderProfile(){const n=document.querySelector("#profileName"),r=document.querySelector("#profileRating"),b=document.querySelector("#profileBalance"),w=document.querySelector("#profileWins"),gm=document.querySelector("#profileGames"),st=document.querySelector("#profileStreak"),login=document.querySelector("#profileLogin");if(n)n.textContent=S.name==="Игрок"?uiText("Игрок"):S.name;if(r)r.textContent=String(S.rating);if(b)b.textContent=String(S.balance);if(w)w.textContent=String(S.wins);if(gm)gm.textContent=String(S.games);if(st)st.textContent=String(S.winStreak||0);paintAvatar(document.querySelector("#profileAvatarButton"),S.avatar);if(login){login.hidden=S.authorized;login.textContent=uiText("Войти в Яндекс")}}
  function prefillNames(){["#randomPlayerName","#createPlayerName","#joinPlayerName"].forEach(sel=>{const el=document.querySelector(sel);if(el&&!el.value)el.value=S.name==="Игрок"?"":S.name})}
  async function login(){if(!window.ysdk)return;try{await window.ysdk.auth.openAuthDialog();await initPlayer()}catch{}}
@@ -291,7 +313,7 @@
  }
  function startInvitePolling(){
    clearInterval(SOCIAL.pollTimer);loadInvites();
-   SOCIAL.pollTimer=setInterval(()=>{if(!document.hidden)loadInvites()},6500);
+   SOCIAL.pollTimer=setInterval(()=>{if(!document.hidden&&!window.MondavoshkaOnline?.active)loadInvites()},9000);
  }
 
  function renderProfileModal(){paintAvatar(document.querySelector("#profileModalAvatar"),S.avatar);const n=document.querySelector("#profileModalName"),r=document.querySelector("#profileModalRating"),w=document.querySelector("#profileModalWins"),g=document.querySelector("#profileModalGames"),st=document.querySelector("#profileModalStreak"),best=document.querySelector("#profileBestStreak");if(n)n.textContent=S.name==="Игрок"?uiText("Игрок"):S.name;if(r)r.textContent=S.rating;if(w)w.textContent=S.wins;if(g)g.textContent=S.games;if(st)st.textContent=S.winStreak||0;if(best)best.textContent=uiText(`Лучшая серия: ${S.bestWinStreak||0}`);const cc=document.querySelector("#profileCurrentCosmetics");if(cc){const t=TABLES.find(x=>x.id===S.equippedTable)?.name||"Классический";const d=DICE.find(x=>x.id===S.equippedDice)?.name||"Слоновая кость";cc.textContent=window.PartisI18n?.language==="sah"?`Остуол: ${uiText(t)} · Кубиктар: ${uiText(d)}`:`Стол: ${t} · Кубики: ${d}`}const choices=document.querySelector("#avatarChoices");if(choices){choices.innerHTML="";AVATARS.forEach(a=>choices.appendChild(avatarChoiceButton(a)))}const ag=document.querySelector("#achievementGrid");if(ag){ag.innerHTML="";ACHIEVEMENTS.forEach(a=>{const unlocked=S.achievements.includes(a.id);const d=document.createElement("div");d.className="achievementCard"+(unlocked?" unlocked":" locked");d.innerHTML=`<span>${unlocked?a.icon:"🔒"}</span><div><b></b><small></small></div>`;d.querySelector("b").textContent=uiText(a.name);d.querySelector("small").textContent=uiText(a.text);const rw=document.createElement("em");rw.className="achievementReward";rw.textContent=`+${a.reward||0} 💰`;d.querySelector("div").appendChild(rw);ag.appendChild(d)})}renderFriendIdentity();renderSocial()}
@@ -408,7 +430,12 @@
  document.querySelector("#copyPlayerId")?.addEventListener("click",e=>copyText(S.id,e.currentTarget));
  document.querySelector("#copyFriendCode")?.addEventListener("click",e=>copyText(S.friendCode,e.currentTarget));
  document.querySelector("#avatarUploadBtn")?.addEventListener("click",()=>document.querySelector("#avatarUpload")?.click());document.querySelector("#avatarUpload")?.addEventListener("change",e=>{const f=e.target.files?.[0];if(f)handleAvatarUpload(f);e.target.value=""});document.querySelectorAll(".hubBack").forEach(b=>b.addEventListener("click",closeToMenu));
- function renderAllLocalized(){renderProfile();renderProfileModal();renderDaily();renderShop()}
+ function renderAllLocalized(){
+   renderProfile();
+   if(document.querySelector("#profileModal")?.classList.contains("show"))renderProfileModal();
+   if(document.querySelector("#dailyModal")?.classList.contains("show"))renderDaily();
+   if(document.querySelector("#shopModal")?.classList.contains("show"))renderShop();
+ }
  window.MondavoshkaProfile={state:S,skins:SKINS,countrySkins:COUNTRY_SKINS,clubProducts:CLUB_PRODUCTS,tables:TABLES,dice:DICE,achievements:ACHIEVEMENTS,publicProfile,skinVisual,tableVisual,diceVisual,avatarInfo,paintAvatar,applyServerProfile,awardFromServer,dailyAwardFromServer,loadLeaderboard,loadDaily,reportDaily,reportLocalMatch,unlockAchievement,renderProfileModal,renderAllLocalized,loadSocial,addFriend,removeFriend,sendFriendInvite,findFriend,isFriend,renderLobbyFriends,get social(){return SOCIAL},get equippedSkin(){return S.equipped},get equippedTable(){return S.equippedTable},get equippedDice(){return S.equippedDice},get avatar(){return S.avatar},get id(){return S.id},get name(){return S.name}};
  initPlayer();
 })();
