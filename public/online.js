@@ -16,6 +16,9 @@
    return `${proto}//${location.host}/ws`;
  }
  function cleanName(v){return String(v||"").replace(/[<>\u0000-\u001f]/g,"").trim().slice(0,24)||"Игрок"}
+ function profileName(){
+   return cleanName(window.MondavoshkaProfile?.name||"Игрок");
+ }
  function normalizeCode(v){return String(v||"").replace(/\D/g,"").slice(0,6)}
  function setErr(id,text){const e=document.querySelector(id);if(e)e.textContent=uiText(text||"")}
  function profilePayload(){
@@ -352,14 +355,14 @@
  }
  async function createRoom(){
    setErr("#createOnlineError","");S.matchMode="room";
-   S.name=cleanName(document.querySelector("#createPlayerName")?.value);
+   S.name=profileName();
    S.timerEnabled=document.querySelector("#createTimerMode")?.value!=="off";
    try{await connect();send({type:"create_room",name:S.name,timerEnabled:S.timerEnabled,...profilePayload()})}
    catch(e){setErr("#createOnlineError",`${e.message}. Проверьте адрес онлайн-сервера.`)}
  }
  async function joinRoom(){
    setErr("#joinOnlineError","");S.matchMode="room";
-   S.name=cleanName(document.querySelector("#joinPlayerName")?.value);
+   S.name=profileName();
    const code=normalizeCode(document.querySelector("#roomCode")?.value);
    if(code.length!==6){setErr("#joinOnlineError","Введите 6-значный код комнаты.");return}
    try{await connect();send({type:"join_room",code,name:S.name,...profilePayload()})}
@@ -370,8 +373,7 @@
    if(normalized.length!==6)return false;
    if(S.active)leave(false);
    closeGameMenus();
-   const name=document.querySelector("#joinPlayerName"),input=document.querySelector("#roomCode");
-   if(name&&!name.value)name.value=window.MondavoshkaProfile?.name==="Игрок"?"":window.MondavoshkaProfile?.name||"";
+   const input=document.querySelector("#roomCode");
    if(input)input.value=normalized;
    document.querySelector("#onlineJoinModal")?.classList.add("show");
    await joinRoom();
@@ -384,13 +386,13 @@
  function setRandomForm(searching){
    S.randomSearching=!!searching;
    const find=document.querySelector("#findRandomBtn"),cancel=document.querySelector("#cancelRandomBtn");
-   const name=document.querySelector("#randomPlayerName"),size=document.querySelector("#randomPlayerCount"),timerMode=document.querySelector("#randomTimerMode");
+   const size=document.querySelector("#randomPlayerCount"),timerMode=document.querySelector("#randomTimerMode");
    if(find)find.disabled=searching;if(cancel)cancel.style.display=searching?"inline-block":"none";
-   if(name)name.disabled=searching;if(size)size.disabled=searching;if(timerMode)timerMode.disabled=searching;
+   if(size)size.disabled=searching;if(timerMode)timerMode.disabled=searching;
  }
  async function findRandom(){
    setErr("#randomOnlineError","");
-   S.name=cleanName(document.querySelector("#randomPlayerName")?.value);
+   S.name=profileName();
    S.randomSize=Math.max(2,Math.min(4,Number(document.querySelector("#randomPlayerCount")?.value)||2));
    S.timerEnabled=document.querySelector("#randomTimerMode")?.value!=="off";
    S.matchMode="random";setRandomForm(true);setRandomStatus("Подключаемся к серверу…",true);

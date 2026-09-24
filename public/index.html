@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Партис V57 — адаптивный профиль</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Партис V61 — имя только из профиля</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -326,9 +326,6 @@
     <div class="modal" id="randomOnlineModal">
       <div class="dialog onlineDialog">
         <h2>Играть со случайными людьми</h2>
-        <label>Ваше имя
-          <input id="randomPlayerName" type="text" maxlength="24" placeholder="Например: Гриша">
-        </label>
         <label>Сколько игроков в партии
           <select id="randomPlayerCount">
             <option value="2" selected>2 игрока — быстрее всего найти соперника</option>
@@ -342,7 +339,7 @@
             <option value="off">Без таймера</option>
           </select>
         </label>
-        <div id="randomStatus" class="randomStatus"><span id="randomSpinner" class="randomSpinner"></span>Введите имя и начните поиск.</div>
+        <div id="randomStatus" class="randomStatus"><span id="randomSpinner" class="randomSpinner"></span>Выберите режим и начните поиск.</div>
         <div id="randomOnlineError" class="onlineError"></div>
         <p class="onlineHint">Игра подберёт людей, которые сейчас ищут партию с таким же количеством игроков.</p>
         <div class="dialogActions randomActions">
@@ -356,9 +353,6 @@
     <div class="modal" id="onlineCreateModal">
       <div class="dialog onlineDialog">
         <h2>Создать онлайн-комнату</h2>
-        <label>Ваше имя
-          <input id="createPlayerName" type="text" maxlength="24" placeholder="Например: Гриша">
-        </label>
         <label>Режим времени
           <select id="createTimerMode">
             <option value="on" selected>С таймером — 25 секунд на ход</option>
@@ -377,9 +371,6 @@
     <div class="modal" id="onlineJoinModal">
       <div class="dialog onlineDialog">
         <h2>Войти по коду</h2>
-        <label>Ваше имя
-          <input id="joinPlayerName" type="text" maxlength="24" placeholder="Например: Альберт">
-        </label>
         <label>Код комнаты
           <input id="roomCode" type="text" inputmode="numeric" maxlength="6" placeholder="Например: 483921">
         </label>
