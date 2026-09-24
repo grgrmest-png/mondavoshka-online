@@ -4,7 +4,7 @@ const PORT=Number(process.env.PORT||8080);
 const PUBLIC=path.join(__dirname,"public");
 const PROFILE_FILE=path.join(__dirname,"profiles.json");
 const USED_PURCHASES_FILE=path.join(__dirname,"used-purchases.json");
-const TURN_MS=25000,MAX_MISSES=3;
+const TURN_MS=25000,MAX_MISSES=3,RECONNECT_GRACE_MS=90000;
 const COLOR_SETS={2:["Красный","Синий"],3:["Красный","Чёрный","Синий"],4:["Красный","Чёрный","Синий","Бело-синий"]};
 const rooms=new Map(),randomQueue=[],profiles=new Map(),usedPurchaseTokens=new Set();
 const COLORS=["Красный","Чёрный","Синий","Бело-синий"];
@@ -15,9 +15,21 @@ const ACHIEVEMENT_REWARDS=new Map([
  ["first_kush",10],["first_home",15],["home3",25],["first_capture",20],["hunter3",35],["jailer5",60],
  ["trap_visit",10],["trap_escape",20],["trap_regular",25],["triple_kush",50],["kush_master",40],["kush_legend",70],
  ["marathon20",20],["marathon30",35],["first_win",50],["full_house",75],["clean_win",100],["aggressive_win",80],["calm_win",80],
- ["games5",25],["games25",100],["wins3",60],["wins10",150],["rating500",50],["rating1000",100]
+ ["games5",25],["games25",100],["wins3",60],["wins10",150],["rating500",50],["rating1000",100],
+ ["streak3",60],["streak5",120],["streak10",300],["double_kill",50],["comeback_win",100],["last_piece",25]
 ]);
 const ACHIEVEMENT_IDS=new Set(ACHIEVEMENT_REWARDS.keys());
+const DAILY_QUEST_POOL=[
+ {id:"play2",event:"game",target:2,reward:40,name:"Сыграть 2 партии"},
+ {id:"win1",event:"win",target:1,reward:60,name:"Одержать 1 победу"},
+ {id:"home5",event:"home",target:5,reward:50,name:"Завести 5 фишек в Домик"},
+ {id:"capture3",event:"capture",target:3,reward:50,name:"Взять 3 фишки в плен"},
+ {id:"kush3",event:"kush",target:3,reward:40,name:"Выбросить 3 куша"},
+ {id:"escape1",event:"trap_escape",target:1,reward:35,name:"Выбраться из ловушки"},
+ {id:"moves20",event:"move",target:20,reward:30,name:"Сделать 20 ходов"}
+];
+const DAILY_EVENTS=new Set(DAILY_QUEST_POOL.map(q=>q.event));
+
 const PREMIUM_PRODUCTS={
  skin_barcelona:"club_barcelona",
  skin_real_madrid:"club_real_madrid",
@@ -39,6 +51,64 @@ const PREMIUM_PRODUCTS={
  skin_country_china:"country_china"
 };
 const GUID="258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+
+function yakutskDate(){
+ try{
+   const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Yakutsk",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+   const o=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+   return `${o.year}-${o.month}-${o.day}`;
+ }catch{
+   const d=new Date(Date.now()+9*60*60*1000);
+   return d.toISOString().slice(0,10);
+ }
+}
+function dailyQuestSet(date=yakutskDate()){
+ let h=2166136261>>>0;
+ for(const ch of String(date)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0}
+ const pool=[...DAILY_QUEST_POOL];
+ for(let i=pool.length-1;i>0;i--){h=(Math.imul(h,1664525)+1013904223)>>>0;const j=h%(i+1);[pool[i],pool[j]]=[pool[j],pool[i]]}
+ return pool.slice(0,3);
+}
+function ensureDaily(p){
+ const date=yakutskDate();
+ if(!p.daily||p.daily.date!==date)p.daily={date,progress:{},claimed:{}};
+ if(!p.daily.progress||typeof p.daily.progress!=="object")p.daily.progress={};
+ if(!p.daily.claimed||typeof p.daily.claimed!=="object")p.daily.claimed={};
+ return p.daily;
+}
+function dailyPublic(p){
+ const d=ensureDaily(p);
+ return {date:d.date,quests:dailyQuestSet(d.date).map(q=>({
+   id:q.id,event:q.event,name:q.name,target:q.target,reward:q.reward,
+   progress:Math.min(q.target,Math.max(0,Number(d.progress[q.id])||0)),
+   claimed:!!d.claimed[q.id]
+ }))};
+}
+function progressDaily(p,event,amount=1){
+ if(!DAILY_EVENTS.has(event))return {reward:0,completed:[],daily:dailyPublic(p)};
+ const d=ensureDaily(p),quests=dailyQuestSet(d.date),completed=[];
+ amount=Math.max(0,Math.min(10,Number(amount)||0));
+ let reward=0;
+ for(const q of quests){
+   if(q.event!==event)continue;
+   const before=Math.min(q.target,Math.max(0,Number(d.progress[q.id])||0));
+   const after=Math.min(q.target,before+amount);
+   d.progress[q.id]=after;
+   if(after>=q.target&&!d.claimed[q.id]){
+     d.claimed[q.id]=true;reward+=q.reward;completed.push(q.id);
+   }
+ }
+ if(reward>0)p.balance=(p.balance||0)+reward;
+ p.updatedAt=Date.now();
+ return {reward,completed,daily:dailyPublic(p)};
+}
+function updateWinStreak(p,won){
+ p.winStreak=Math.max(0,Number(p.winStreak)||0);
+ p.bestWinStreak=Math.max(0,Number(p.bestWinStreak)||0);
+ if(won){p.winStreak++;p.bestWinStreak=Math.max(p.bestWinStreak,p.winStreak)}
+ else p.winStreak=0;
+}
 
 function loadData(){
  try{const obj=JSON.parse(fs.readFileSync(PROFILE_FILE,"utf8"));for(const [k,v] of Object.entries(obj||{}))profiles.set(k,v)}catch{}
@@ -65,7 +135,7 @@ function getProfile(id,name=null,seed=null){
  id=safeProfileId(id)||("guest-"+crypto.randomBytes(8).toString("hex"));
  let p=profiles.get(id);
  if(!p){
-   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),owned:["default"],equipped:"default",avatar:safeAvatar(seed?.avatar),ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],rewardedAchievements:[],updatedAt:Date.now()};
+   p={id,name:safeName(name||"Игрок"),rating:Math.max(0,+seed?.rating||0),balance:Math.max(0,+seed?.balance||0),wins:Math.max(0,+seed?.wins||0),games:Math.max(0,+seed?.games||0),winStreak:0,bestWinStreak:0,owned:["default"],equipped:"default",avatar:safeAvatar(seed?.avatar),ownedTables:["table_classic"],equippedTable:"table_classic",ownedDice:["dice_ivory"],equippedDice:"dice_ivory",achievements:[],rewardedAchievements:[],daily:null,recentMatchIds:[],updatedAt:Date.now()};
    if(Array.isArray(seed?.owned))p.owned=[...new Set(["default",...seed.owned.map(safeSkin)])];
    if(seed?.equipped&&p.owned.includes(safeSkin(seed.equipped)))p.equipped=safeSkin(seed.equipped);
    if(Array.isArray(seed?.ownedTables))p.ownedTables=[...new Set(["table_classic",...seed.ownedTables.map(safeTable)])];
@@ -75,7 +145,7 @@ function getProfile(id,name=null,seed=null){
    if(Array.isArray(seed?.achievements))p.achievements=[...new Set(seed.achievements.map(safeAchievement).filter(Boolean))];
    profiles.set(id,p);saveProfiles();
  }else{
-   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];p.updatedAt=Date.now();
+   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];p.winStreak=Math.max(0,Number(p.winStreak)||0);p.bestWinStreak=Math.max(p.winStreak,Number(p.bestWinStreak)||0);p.recentMatchIds=Array.isArray(p.recentMatchIds)?p.recentMatchIds:[];ensureDaily(p);p.updatedAt=Date.now();
  }
  return p;
 }
@@ -104,7 +174,7 @@ function claimAchievementRewards(p){
  if(total>0)p.balance=(p.balance||0)+total;
  p.updatedAt=Date.now();return total;
 }
-function pubProfile(p){return {id:p.id,name:p.name,rating:p.rating||0,balance:p.balance||0,wins:p.wins||0,games:p.games||0,owned:p.owned||["default"],equipped:p.equipped||"default",avatar:safeAvatar(p.avatar),ownedTables:p.ownedTables||["table_classic"],equippedTable:safeTable(p.equippedTable),ownedDice:p.ownedDice||["dice_ivory"],equippedDice:safeDice(p.equippedDice),achievements:(p.achievements||[]).map(safeAchievement).filter(Boolean)}}
+function pubProfile(p){return {id:p.id,name:p.name,rating:p.rating||0,balance:p.balance||0,wins:p.wins||0,games:p.games||0,winStreak:Math.max(0,Number(p.winStreak)||0),bestWinStreak:Math.max(0,Number(p.bestWinStreak)||0),daily:dailyPublic(p),owned:p.owned||["default"],equipped:p.equipped||"default",avatar:safeAvatar(p.avatar),ownedTables:p.ownedTables||["table_classic"],equippedTable:safeTable(p.equippedTable),ownedDice:p.ownedDice||["dice_ivory"],equippedDice:safeDice(p.equippedDice),achievements:(p.achievements||[]).map(safeAchievement).filter(Boolean)}}
 function leaderboard(limit=30){return [...profiles.values()].sort((a,b)=>(b.rating||0)-(a.rating||0)||(b.wins||0)-(a.wins||0)).slice(0,limit).map(pubProfile)}
 function verifySignedBlob(signature){
  const key=String(process.env.YANDEX_GAMES_SECRET||"");
@@ -139,6 +209,30 @@ async function handleApi(req,res,u){
  if(req.method==="GET"&&u.pathname==="/api/profile"){
    const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
    json(res,200,{profile:pubProfile(getProfile(id,null))});return true
+ }
+ if(req.method==="GET"&&u.pathname==="/api/daily"){
+   const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
+   const p=getProfile(id,null);json(res,200,{daily:dailyPublic(p),profile:pubProfile(p)});return true
+ }
+ if(req.method==="POST"&&u.pathname==="/api/daily-progress"){
+   let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
+   const id=safeProfileId(body.id),event=String(body.event||"");if(!id||!DAILY_EVENTS.has(event)){json(res,400,{error:"bad daily event"});return true}
+   const p=getProfile(id,body.name||null),r=progressDaily(p,event,body.amount);saveProfiles();
+   json(res,200,{ok:true,reward:r.reward,completed:r.completed,daily:r.daily,profile:pubProfile(p)});return true
+ }
+ if(req.method==="POST"&&u.pathname==="/api/local-match-result"){
+   let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
+   const id=safeProfileId(body.id),matchId=String(body.matchId||"").replace(/[^a-zA-Z0-9_.:-]/g,"").slice(0,80);
+   if(!id||!matchId){json(res,400,{error:"bad match"});return true}
+   const p=getProfile(id,body.name||null);p.recentMatchIds=Array.isArray(p.recentMatchIds)?p.recentMatchIds:[];
+   if(!p.recentMatchIds.includes(matchId)){
+     p.recentMatchIds.push(matchId);if(p.recentMatchIds.length>50)p.recentMatchIds.splice(0,p.recentMatchIds.length-50);
+     p.games=(p.games||0)+1;const won=!!body.won;if(won)p.wins=(p.wins||0)+1;updateWinStreak(p,won);
+     let reward=0;reward+=progressDaily(p,"game",1).reward;if(won)reward+=progressDaily(p,"win",1).reward;
+     saveProfiles();
+     json(res,200,{ok:true,reward,profile:pubProfile(p)});return true
+   }
+   json(res,200,{ok:true,reward:0,profile:pubProfile(p),duplicate:true});return true
  }
  if(req.method==="POST"&&u.pathname==="/api/unlock-achievement"){
    let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
@@ -241,11 +335,41 @@ function sendControl(ws,opcode,payload=Buffer.alloc(0)){if(!ws||ws.destroyed)ret
 function roomCode(){for(let i=0;i<50;i++){const c=String(crypto.randomInt(100000,1000000));if(!rooms.has(c))return c}throw new Error("code")}
 function token(){return crypto.randomBytes(18).toString("hex")}
 function roomColors(room){return COLOR_SETS[room.state?.players?.length||room.players.length]||COLOR_SETS[4]}
-function playerList(room){const cs=roomColors(room);return room.players.map(p=>({seat:p.seat,name:p.name,connected:p.bot?true:!!p.connected,bot:!!p.bot,host:!!p.host,color:cs[p.seat]||COLORS[p.seat],profileId:p.profileId||null,skinId:p.skinId||"default",avatar:safeAvatar(p.avatar||(p.profileId?profiles.get(p.profileId)?.avatar:null)),rating:p.profileId?(profiles.get(p.profileId)?.rating||0):0,eliminated:!!room.state?.players?.[p.seat]?.eliminated,misses:room.misses?.[p.seat]||0})).sort((a,b)=>a.seat-b.seat)}
+function playerList(room){const cs=roomColors(room);return room.players.map(p=>({seat:p.seat,name:p.name,connected:p.bot?true:!!p.connected,bot:!!p.bot,host:!!p.host,color:cs[p.seat]||COLORS[p.seat],profileId:p.profileId||null,skinId:p.skinId||"default",avatar:safeAvatar(p.avatar||(p.profileId?profiles.get(p.profileId)?.avatar:null)),rating:p.profileId?(profiles.get(p.profileId)?.rating||0):0,eliminated:!!room.state?.players?.[p.seat]?.eliminated,misses:room.misses?.[p.seat]||0,reconnectUntil:p.bot?0:(Number(p.reconnectUntil)||0),connectionIssue:!p.bot&&!p.connected&&!!p.reconnectUntil})).sort((a,b)=>a.seat-b.seat)}
 function broadcast(room,obj){for(const p of room.players)if(p.connected&&p.ws)send(p.ws,obj)}
-function roomUpdate(room){broadcast(room,{type:"room_update",code:room.code,players:playerList(room),started:room.started,deadline:room.deadline||0,misses:room.misses||[],matchPoints:room.matchPoints||[],timerEnabled:room.timerEnabled!==false,chatHistory:room.chatHistory||[],autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat})}
+function roomUpdate(room){broadcast(room,{type:"room_update",code:room.code,players:playerList(room),started:room.started,deadline:room.deadline||0,misses:room.misses||[],matchPoints:room.matchPoints||[],timerEnabled:room.timerEnabled!==false,chatHistory:room.chatHistory||[],autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat,connectionPausedSeat:Number.isInteger(room.connectionPausedSeat)?room.connectionPausedSeat:null})}
 function err(ws,message){send(ws,{type:"error",message})}
-function attach(ws,p,room){p.ws=ws;p.connected=true;ws._room=room.code;ws._token=p.token;ws._seat=p.seat}
+function attach(ws,p,room){p.ws=ws;p.connected=true;p.disconnectedAt=0;p.reconnectUntil=0;ws._room=room.code;ws._token=p.token;ws._seat=p.seat}
+
+function connectionBroadcast(room,p,recovered=false){
+ broadcast(room,{type:"player_connection",seat:p.seat,name:p.name,connected:!!p.connected,reconnectUntil:Number(p.reconnectUntil)||0,recovered,players:playerList(room),connectionPausedSeat:Number.isInteger(room.connectionPausedSeat)?room.connectionPausedSeat:null,deadline:room.deadline||0});
+}
+function pauseForDisconnectedTurn(room,p){
+ if(!room.started||room.gameOver||!room.state||p.bot||p.connected)return;
+ if(room.state.turn!==p.seat)return;
+ if(room.connectionPausedSeat===p.seat)return;
+ room.connectionPausedSeat=p.seat;
+ room.pausedTurnMs=room.timerEnabled===false?0:Math.max(1000,room.deadline?room.deadline-Date.now():TURN_MS);
+ room.deadline=0;room.timeoutInProgress=false;
+ broadcast(room,{type:"turn_timer",turn:room.state.turn,deadline:0,timerEnabled:room.timerEnabled!==false,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat,connectionPausedSeat:p.seat});
+}
+function markDisconnected(room,p){
+ if(!p||p.bot||room.gameOver)return;
+ p.connected=false;p.ws=null;p.disconnectedAt=Date.now();p.reconnectUntil=p.disconnectedAt+RECONNECT_GRACE_MS;
+ pauseForDisconnectedTurn(room,p);
+ room.status=`У ${p.name} проблемы со связью. Ждём переподключения до 90 секунд.`;
+ connectionBroadcast(room,p,false);roomUpdate(room);
+}
+function resumeAfterReconnect(room,p){
+ if(room.connectionPausedSeat===p.seat&&room.started&&!room.gameOver){
+   const ms=room.timerEnabled===false?0:Math.max(1000,Number(room.pausedTurnMs)||TURN_MS);
+   room.connectionPausedSeat=null;room.pausedTurnMs=0;room.deadline=room.timerEnabled===false?0:Date.now()+ms;
+   room.status=`${p.name} вернулся в игру. Партия продолжается.`;
+   broadcast(room,{type:"turn_timer",turn:room.state?.turn,deadline:room.deadline,timerEnabled:room.timerEnabled!==false,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat,connectionPausedSeat:null});
+ }
+ connectionBroadcast(room,p,true);roomUpdate(room);
+}
+
 function findFreeSeat(room){for(let s=0;s<4;s++)if(!room.players.some(p=>p.seat===s))return s;return -1}
 function compactSeats(room){
  room.players.sort((a,b)=>a.seat-b.seat);
@@ -312,7 +436,7 @@ function createRoomObject(code,players,random=false,targetSize=null,timerEnabled
    timerEnabled:timerEnabled!==false,deadline:0,timeoutInProgress:false,
    misses:Array(players.length).fill(0),matchPoints:Array(players.length).fill(0),awardedHomes:Array(players.length).fill(0),
    kushStreakSeat:null,kushStreakCount:0,
-   chatHistory:[],gameOver:false,winnerSeat:null,autoSeat:null,autoControllerSeat:null};
+   chatHistory:[],gameOver:false,winnerSeat:null,autoSeat:null,autoControllerSeat:null,connectionPausedSeat:null,pausedTurnMs:0};
 }
 function tryRandomMatch(size,timerEnabled=true){
  const active=queueEntries(size,timerEnabled);if(active.length<size){notifyRandomQueue(size,timerEnabled);return}
@@ -370,8 +494,13 @@ function registerKushRoll(room,seat,dice){
 function startTurnTimer(room){
  if(!room.started||room.gameOver||!room.state)return;
  room.timeoutInProgress=false;
+ const current=room.players.find(x=>x.seat===room.state.turn);
+ if(current&&!current.bot&&!current.connected){
+   room.deadline=0;pauseForDisconnectedTurn(room,current);return;
+ }
+ room.connectionPausedSeat=null;room.pausedTurnMs=0;
  room.deadline=room.timerEnabled===false?0:Date.now()+TURN_MS;
- broadcast(room,{type:"turn_timer",turn:room.state.turn,deadline:room.deadline,timerEnabled:room.timerEnabled!==false,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});
+ broadcast(room,{type:"turn_timer",turn:room.state.turn,deadline:room.deadline,timerEnabled:room.timerEnabled!==false,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat,connectionPausedSeat:null});
 }
 function homeCount(state,seat){return state.players?.[seat]?.pieces?.filter(x=>x.state==="home").length||0}
 function awardHomePoints(room,state){
@@ -390,8 +519,14 @@ function finishMatch(room,winnerSeat,reason){
  if(room.state)room.state.gameOver=true;
  for(const rp of room.players){
    if(!rp.profileId)continue;
-   const p=getProfile(rp.profileId,rp.name);p.games=(p.games||0)+1;if(rp.seat===winnerSeat)p.wins=(p.wins||0)+1;saveProfiles();
-   send(rp.ws,{type:"rating_award",delta:0,matchPoints:room.matchPoints[rp.seat]||0,profile:pubProfile(p)});
+   const p=getProfile(rp.profileId,rp.name),won=rp.seat===winnerSeat;
+   p.games=(p.games||0)+1;if(won)p.wins=(p.wins||0)+1;updateWinStreak(p,won);
+   let dailyReward=progressDaily(p,"game",1).reward;if(won)dailyReward+=progressDaily(p,"win",1).reward;
+   saveProfiles();
+   if(rp.connected&&rp.ws){
+     send(rp.ws,{type:"rating_award",delta:0,matchPoints:room.matchPoints[rp.seat]||0,profile:pubProfile(p)});
+     if(dailyReward>0)send(rp.ws,{type:"daily_update",reward:dailyReward,profile:pubProfile(p)});
+   }
  }
  room.version++;
  const winner=room.players.find(x=>x.seat===winnerSeat);
@@ -444,13 +579,16 @@ function finishForcedLoss(room,loserSeat,reason,bonus=20){
 
  for(const rp of room.players){
    if(!rp.profileId)continue;
-   const p=getProfile(rp.profileId,rp.name);
+   const p=getProfile(rp.profileId,rp.name),won=rp.seat===winnerSeat;
    p.games=(p.games||0)+1;
-   if(rp.seat===winnerSeat)p.wins=(p.wins||0)+1;
+   if(won)p.wins=(p.wins||0)+1;
+   if(won||rp.seat===loserSeat)updateWinStreak(p,won);
+   let dailyReward=progressDaily(p,"game",1).reward;if(won)dailyReward+=progressDaily(p,"win",1).reward;
    saveProfiles();
-   if(rp.connected&&rp.ws)send(rp.ws,{
-     type:"rating_award",delta:0,matchPoints:room.matchPoints[rp.seat]||0,profile:pubProfile(p)
-   });
+   if(rp.connected&&rp.ws){
+     send(rp.ws,{type:"rating_award",delta:0,matchPoints:room.matchPoints[rp.seat]||0,profile:pubProfile(p)});
+     if(dailyReward>0)send(rp.ws,{type:"daily_update",reward:dailyReward,profile:pubProfile(p)});
+   }
  }
 
  room.version++;
@@ -563,8 +701,8 @@ function onMessage(ws,m){
  if(m.type==="reconnect_room"){
    removeFromRandomQueue(ws);const room=rooms.get(String(m.code||""));if(!room)return err(ws,"Комната больше не существует.");
    const p=room.players.find(x=>x.token===m.token);if(!p)return err(ws,"Не удалось восстановить место игрока.");
-   p.name=safeName(m.name||p.name);if(m.profileId)p.profileId=safeProfileId(m.profileId);if(m.skinId)p.skinId=safeSkin(m.skinId);if(m.avatar)p.avatar=safeAvatar(m.avatar);attach(ws,p,room);room.lastActive=Date.now();
-   send(ws,{type:"room_reconnected",code:room.code,token:p.token,seat:p.seat,host:p.host,players:playerList(room),started:room.started,state:room.state,status:room.status,version:room.version,deadline:room.deadline,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat});roomUpdate(room);return;
+   p.name=safeName(m.name||p.name);if(m.profileId)p.profileId=safeProfileId(m.profileId);if(m.skinId)p.skinId=safeSkin(m.skinId);if(m.avatar)p.avatar=safeAvatar(m.avatar);attach(ws,p,room);room.lastActive=Date.now();resumeAfterReconnect(room,p);
+   send(ws,{type:"room_reconnected",code:room.code,token:p.token,seat:p.seat,host:p.host,players:playerList(room),started:room.started,state:room.state,status:room.status,version:room.version,deadline:room.deadline,timerEnabled:room.timerEnabled,chatHistory:room.chatHistory,misses:room.misses,matchPoints:room.matchPoints,autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat,connectionPausedSeat:Number.isInteger(room.connectionPausedSeat)?room.connectionPausedSeat:null});return;
  }
  const room=rooms.get(String(m.code||ws._room||""));if(!room)return err(ws,"Комната не найдена.");
  const p=room.players.find(x=>x.token===ws._token);if(!p)return err(ws,"Игрок не найден в комнате.");room.lastActive=Date.now();
@@ -576,7 +714,7 @@ function onMessage(ws,m){
      finishForcedLoss(room,p.seat,"добровольно вышел из партии и получил поражение",20);
      p.connected=false;p.ws=null;
    }else{
-     p.connected=false;p.ws=null;
+     markDisconnected(room,p);
    }
    ws._room=null;ws._token=null;
    roomUpdate(room);
@@ -698,15 +836,25 @@ server.on("upgrade",(req,socket)=>{
  socket._buf=Buffer.alloc(0);socket.on("data",c=>parseFrames(socket,c));
  socket.on("close",()=>{
    removeFromRandomQueue(socket);const room=rooms.get(socket._room);if(!room)return;const p=room.players.find(x=>x.token===socket._token);if(!p)return;
-   room.lastActive=Date.now();if(!room.started){room.players=room.players.filter(x=>x.token!==p.token);compactSeats(room)}else{p.connected=false;p.ws=null}
-   broadcast(room,{type:"player_left",name:p.name,players:playerList(room)});roomUpdate(room);if(!room.players.filter(x=>!x.bot).length)rooms.delete(room.code);
+   room.lastActive=Date.now();
+   if(!room.started){room.players=room.players.filter(x=>x.token!==p.token);compactSeats(room);broadcast(room,{type:"player_left",name:p.name,players:playerList(room)});roomUpdate(room)}
+   else if(!room.gameOver){markDisconnected(room,p)}
+   if(!room.players.filter(x=>!x.bot).length&&!room.started)rooms.delete(room.code);
  });socket.on("error",()=>{});
 });
 setInterval(()=>{
  const now=Date.now();
  for(const room of rooms.values()){
-   if(room.started&&!room.gameOver&&room.timerEnabled!==false&&room.deadline&&!room.timeoutInProgress&&now>=room.deadline)timeoutTurn(room);
+   if(room.started&&!room.gameOver){
+     const expired=room.players.find(p=>!p.bot&&!p.connected&&p.reconnectUntil&&now>=p.reconnectUntil);
+     if(expired){
+       expired.reconnectUntil=0;
+       finishForcedLoss(room,expired.seat,"не восстановил связь за 90 секунд и автоматически проиграл",20);
+       continue;
+     }
+   }
+   if(room.started&&!room.gameOver&&!Number.isInteger(room.connectionPausedSeat)&&room.timerEnabled!==false&&room.deadline&&!room.timeoutInProgress&&now>=room.deadline)timeoutTurn(room);
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V49: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V50: http://localhost:${PORT}`));
