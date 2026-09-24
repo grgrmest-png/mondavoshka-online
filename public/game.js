@@ -1041,15 +1041,31 @@ async function pushOwnForward(pc){
  return true;
 }
 async function pushOwnThroughArrow(pc,jump){
- if(!pc||!jump)return false;
- const own=ownPieceAt(jump.to,pc.owner,pc.id);
+ if(!pc||!jump||pc.state!=="track")return false;
+
+ // ВАЖНОЕ ПРАВИЛО СТРЕЛКИ:
+ // если пришедшая фишка №2 встаёт на вход стрелки, занятый своей фишкой №1,
+ // №2 остаётся на входной клетке, а №1 проходит ВЕСЬ нарисованный переход
+ // и заканчивает движение ТОЧНО на конечной клетке стрелки (локальная клетка "1").
+ // Обычный шаг после перелёта к №1 НЕ добавляется.
+ const exactDestination=jump.to;
+
+ const own=ownPieceAt(exactDestination,pc.owner,pc.id);
  if(own&&!(await pushOwnForward(own)))return false;
- const enemy=enemyAt(jump.to,pc.owner);
+
+ const enemy=enemyAt(exactDestination,pc.owner);
  if(enemy)await capture(enemy,g.players[pc.owner].id);
- const start=TRACK[pc.track],end=TRACK[jump.to],control=[jump.cx,jump.cy];
+
+ const start=TRACK[pc.track];
+ const end=TRACK[exactDestination];
+ const control=[jump.cx,jump.cy];
+
  sfxArrow();
  await animateBezier(pc,start,control,end,650,"arrow");
- pc.track=jump.to;
+
+ // Фиксируем именно конец стрелки. Никакого дополнительного обычного шага.
+ pc.track=exactDestination;
+ renderPieces();
  return true;
 }
 function canPushTrap(side,idx){
@@ -1505,10 +1521,10 @@ async function execute(pc,mv){
        const jump=DIAG_MAP[mv.dest];
        if(pushed&&jump){
          await pushOwnThroughArrow(pushed,jump);
-         showGameEvent(window.partisT?.("event.push","ТОЛЧОК!")||"ТОЛЧОК!","push","Своя фишка вытолкнута по стрелке");
+         showGameEvent(window.partisT?.("event.push","ТОЛЧОК!")||"ТОЛЧОК!","push","Стоявшая фишка прошла по стрелке до её конечной клетки");
        }
        pc.track=mv.dest;
-       setStatus("Фишка заняла вход стрелки и вытолкнула стоявшую там свою фишку по переходу.");
+       setStatus("Пришедшая фишка осталась на входе стрелки, а стоявшая прошла по стрелке до конечной клетки.");
      }else{
        const enemy=enemyAt(mv.dest,pc.owner);
        if(enemy)await capture(enemy,player().id);
