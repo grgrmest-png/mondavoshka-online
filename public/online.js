@@ -509,7 +509,11 @@
        kushStreakCount:Number(m.kushStreakCount)||0,
        kushStreakSeat:Number.isInteger(m.kushStreakSeat)?m.kushStreakSeat:null
      });
-     else maybeContinueAutoTurn();
+     else{
+       // reuseDice=true: сервер сохранил уже выпавшие кубики и использованные шаги.
+       // Ничего не перебрасываем — бот продолжает текущий ход из snapshot.
+       maybeContinueAutoTurn();
+     }
      return;
    }
    if(m.type==="turn_timeout"){

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Партис V61 — имя только из профиля</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
+<title>Партис V62 — таймер и редактирование имени</title><link rel="stylesheet" href="style.css">  <!-- Yandex Games SDK: при загрузке ZIP в Консоль Яндекс Игр используется именно /sdk.js -->
   <script src="/sdk.js"></script>
   <script>
     window.ysdk = null;
@@ -199,6 +199,15 @@
             <div class="profileHero">
               <div id="profileModalAvatar" class="profileModalAvatar"><span>🐯</span></div>
               <div><h3 id="profileModalName">Игрок</h3><p>Рейтинг <b id="profileModalRating">0</b> · Победы <b id="profileModalWins">0</b> · Игры <b id="profileModalGames">0</b> · 🔥 Серия <b id="profileModalStreak">0</b></p><small id="profileBestStreak">Лучшая серия: 0</small><small id="profileCurrentCosmetics">Классический стол · стандартные кубики</small></div>
+            </div>
+
+            <div class="profileSection profileNameSection">
+              <h3>✏️ Имя игрока</h3>
+              <div class="profileNameEditRow">
+                <input id="profileNameInput" type="text" maxlength="24" autocomplete="off" placeholder="Введите имя">
+                <button id="saveProfileName" type="button">Сохранить</button>
+              </div>
+              <small id="profileNameHint">Это имя используется во всех онлайн-комнатах и в поиске друзей.</small>
             </div>
 
             <div class="profileSection profileAvatarSection">

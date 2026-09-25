@@ -1466,3 +1466,32 @@ body[data-dice-skin="dice_ruby"] .die{background:linear-gradient(145deg,#ff8791,
     filter:none!important;
   }
 }
+
+
+/* ==========================================================
+   PARTIS V62 — редактирование имени в профиле
+   ========================================================== */
+.profileNameSection h3{margin:0 0 8px}
+.profileNameEditRow{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  align-items:center;
+}
+.profileNameEditRow input{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  font:700 14px Arial,sans-serif;
+}
+.profileNameEditRow button{white-space:nowrap}
+#profileNameHint{
+  display:block;
+  margin-top:7px;
+  line-height:1.3;
+  color:#76583d;
+}
+@media(max-width:520px){
+  .profileNameEditRow{grid-template-columns:1fr}
+  .profileNameEditRow button{width:100%}
+}
