@@ -161,7 +161,9 @@ function getProfile(id,name=null,seed=null){
    if(Array.isArray(seed?.achievements))p.achievements=[...new Set(seed.achievements.map(safeAchievement).filter(Boolean))];
    profiles.set(id,p);saveProfiles();
  }else{
-   if(name)p.name=safeName(name);p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];p.winStreak=Math.max(0,Number(p.winStreak)||0);p.bestWinStreak=Math.max(p.winStreak,Number(p.bestWinStreak)||0);p.recentMatchIds=Array.isArray(p.recentMatchIds)?p.recentMatchIds:[];p.friends=Array.isArray(p.friends)?p.friends.map(safeProfileId).filter(Boolean):[];p.recentPlayers=Array.isArray(p.recentPlayers)?p.recentPlayers.filter(x=>x&&safeProfileId(x.id)).slice(0,20):[];ensureDaily(p);p.updatedAt=Date.now();
+   // Имя существующего профиля меняется только через /api/update-name.
+   // Обычная синхронизация и вход в комнату не должны случайно перезаписывать ник.
+   p.avatar=safeAvatar(p.avatar);p.ownedTables=Array.isArray(p.ownedTables)?p.ownedTables:["table_classic"];p.equippedTable=safeTable(p.equippedTable);p.ownedDice=Array.isArray(p.ownedDice)?p.ownedDice:["dice_ivory"];p.equippedDice=safeDice(p.equippedDice);p.achievements=Array.isArray(p.achievements)?p.achievements:[];p.rewardedAchievements=Array.isArray(p.rewardedAchievements)?p.rewardedAchievements:[];p.winStreak=Math.max(0,Number(p.winStreak)||0);p.bestWinStreak=Math.max(p.winStreak,Number(p.bestWinStreak)||0);p.recentMatchIds=Array.isArray(p.recentMatchIds)?p.recentMatchIds:[];p.friends=Array.isArray(p.friends)?p.friends.map(safeProfileId).filter(Boolean):[];p.recentPlayers=Array.isArray(p.recentPlayers)?p.recentPlayers.filter(x=>x&&safeProfileId(x.id)).slice(0,20):[];ensureDaily(p);p.updatedAt=Date.now();
  }
  return p;
 }
@@ -267,6 +269,20 @@ async function handleApi(req,res,u){
    if(!target){json(res,404,{error:"Игрок не найден."});return true}
    if(requester&&target.id===requester){json(res,200,{player:{...miniProfile(target.id),self:true}});return true}
    json(res,200,{player:miniProfile(target.id)});return true
+ }
+ if(req.method==="POST"&&u.pathname==="/api/update-name"){
+   let body;try{body=JSON.parse(await readBody(req)||"{}")}catch{json(res,400,{error:"bad json"});return true}
+   const id=safeProfileId(body.id);
+   const raw=String(body.name||"").replace(/[<>\u0000-\u001f]/g,"").trim();
+   if(!id){json(res,400,{error:"profile id required"});return true}
+   if(raw.length<2){json(res,400,{error:"Имя должно содержать минимум 2 символа."});return true}
+   if(raw.length>24){json(res,400,{error:"Имя должно быть не длиннее 24 символов."});return true}
+   const p=getProfile(id,null);
+   p.name=safeName(raw);
+   p.updatedAt=Date.now();
+   saveProfiles();
+   json(res,200,{ok:true,profile:pubProfile(p)});
+   return true
  }
  if(req.method==="GET"&&u.pathname==="/api/social"){
    const id=safeProfileId(u.searchParams.get("id"));if(!id){json(res,400,{error:"id required"});return true}
@@ -503,8 +519,16 @@ function removeFromRandomQueue(ws,notify=true){
  }
 }
 function playerFromMessage(m,seat,host,ws){
- const profileId=safeProfileId(m.profileId);const p=profileId?getProfile(profileId,m.name||"Игрок",{rating:m.rating||0}):null;
- return {seat,name:safeName(m.name),token:token(),host,connected:true,ws,profileId:profileId||null,skinId:safeSkin(m.skinId||(p?.equipped)||"default"),avatar:safeAvatar(m.avatar||(p?.avatar)||"animal:tiger")};
+ const profileId=safeProfileId(m.profileId);
+ const p=profileId?getProfile(profileId,m.name||"Игрок",{rating:m.rating||0}):null;
+ return {
+   seat,
+   name:safeName(p?.name||m.name),
+   token:token(),host,connected:true,ws,
+   profileId:profileId||null,
+   skinId:safeSkin(m.skinId||(p?.equipped)||"default"),
+   avatar:safeAvatar(m.avatar||(p?.avatar)||"animal:tiger")
+ };
 }
 function botPlayer(i){const styles=["cautious","aggressive","risky","adaptive"];return {seat:-1,name:`Компьютер ${i}`,token:`bot-${crypto.randomBytes(8).toString("hex")}`,host:false,connected:true,ws:null,profileId:null,skinId:"default",avatar:"animal:bear",bot:true,botStyle:styles[(Math.max(1,Number(i)||1)-1)%styles.length]}}
 function shufflePlayersForColors(room){
@@ -714,21 +738,43 @@ function beginTimeoutAutoplay(room,seat){
  const controller=chooseAutoController(room,seat);
  // If another real client is available, it temporarily runs the same bot
  // engine used by computer opponents. The server remains authoritative for
- // dice, timer count and accepted state updates.
+ // timer count, dice and accepted state updates.
  if(!controller)return false;
- resetTurnState(room.state);
+
+ const rp=room.players.find(x=>x.seat===seat);
+ const hadRolled=!!room.state?.rolled;
+
  room.state.turn=seat;
  room.autoSeat=seat;
  room.autoControllerSeat=controller.seat;
  room.actionSeat=seat;
  room.deadline=0;
+ room.version++;
+
+ // V62:
+ // Если игрок УЖЕ бросил кубики и не успел закончить ход,
+ // система продолжает ТОЧНО ЭТОТ ЖЕ ход с теми же кубиками,
+ // включая уже использованную кость, forcedSix, ловушку и т.д.
+ // Никакого повторного броска здесь нет.
+ if(hadRolled){
+   room.status=`${rp?.name||"Игрок"} не успел завершить ход за 25 секунд. Просрочка ${room.misses[seat]}/${MAX_MISSES}. Система продолжает ход теми же кубиками.`;
+   broadcast(room,{
+     type:"timeout_autoplay",seat,controllerSeat:controller.seat,reuseDice:true,
+     state:room.state,status:room.status,
+     deadline:0,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
+     autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat
+   });
+   return true;
+ }
+
+ // Если игрок вообще не успел бросить кости, только тогда система бросает их за него.
+ resetTurnState(room.state);
+ room.state.turn=seat;
  const dice=[crypto.randomInt(1,7),crypto.randomInt(1,7)];
  const kush=registerKushRoll(room,seat,dice);
- room.version++;
- const rp=room.players.find(x=>x.seat===seat);
- room.status=`${rp?.name||"Игрок"} не успел за 25 секунд. Просрочка ${room.misses[seat]}/${MAX_MISSES}. Система автоматически делает один ход.`;
+ room.status=`${rp?.name||"Игрок"} не успел бросить кости за 25 секунд. Просрочка ${room.misses[seat]}/${MAX_MISSES}. Система бросает кости и делает ход.`;
  broadcast(room,{
-   type:"timeout_autoplay",seat,controllerSeat:controller.seat,dice,...kush,state:room.state,status:room.status,
+   type:"timeout_autoplay",seat,controllerSeat:controller.seat,dice,...kush,reuseDice:false,state:room.state,status:room.status,
    deadline:0,timerEnabled:room.timerEnabled,misses:room.misses,matchPoints:room.matchPoints,version:room.version,
    autoSeat:room.autoSeat,autoControllerSeat:room.autoControllerSeat
  });
@@ -953,4 +999,4 @@ setInterval(()=>{
    if(room.players.filter(p=>!p.bot).every(p=>!p.connected)&&now-room.lastActive>30*60*1000)rooms.delete(room.code);
  }
 },500).unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V54: http://localhost:${PORT}`));
+server.listen(PORT,"0.0.0.0",()=>console.log(`Partis Online V62: http://localhost:${PORT}`));
